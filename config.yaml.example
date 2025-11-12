@@ -1,73 +1,77 @@
+# Microshare to Event Hub Forwarder Configuration
+# Example configuration showing different recType options
+
+# ============================================================================
+# CONFIGURATION PROFILES
+# Uncomment the profile that matches your data source
+# ============================================================================
+
+# PROFILE 1: Hourly Snapshot Data (default)
+# Use this for aggregated hourly occupancy snapshots
 microshare:
   username: ${MICROSHARE_USERNAME}
   password: ${MICROSHARE_PASSWORD}
   api_key: ${MICROSHARE_API_KEY}
-  view_id: "63f49ba62c0e2e2b0ede4992"
+  
+  # View-based aggregation settings
+  view_id: "YOUR_VIEW_ID_HERE"  # Get from Microshare support
   rec_type: "io.microshare.lake.snapshot.hourly"
-  data_context: '["CUSTOMER","occupancytesting","room"]'
+  data_context: '["${MICROSHARE_DATA_CONTEXT}","occupancy","room"]'
+  
+  # Query parameters
   category: "space"
   metric: "occupancy"
   owner_org: '"[a-zA-Z]"'
-  location: "Prony"
-  base_url: "https://api.microshare.io"
-  token_url: "https://auth.microshare.io/oauth2/token"
+  location: "Building-A"  # Optional: filter by location
 
+# PROFILE 2: People Counter Aggregated Events
+# Use this for 15-minute aggregated people counting data
+# microshare:
+#   username: ${MICROSHARE_USERNAME}
+#   password: ${MICROSHARE_PASSWORD}
+#   api_key: ${MICROSHARE_API_KEY}
+#   
+#   view_id: "YOUR_VIEW_ID_HERE"
+#   rec_type: "io.microshare.peoplecounter.unpacked.event.agg"
+#   data_context: '["people"]'
+#   
+#   # Optional filters
+#   location: "Main-Campus"
+
+# PROFILE 3: Occupancy Motion Sensors
+# Use this for real-time occupancy sensor data
+# microshare:
+#   username: ${MICROSHARE_USERNAME}
+#   password: ${MICROSHARE_PASSWORD}
+#   api_key: ${MICROSHARE_API_KEY}
+#   
+#   view_id: "YOUR_VIEW_ID_HERE"
+#   rec_type: "io.microshare.occupancy.unpacked"
+#   data_context: '["room","motion"]'
+#   
+#   # Optional filters
+#   location: "Office-Building-1"
+
+# ============================================================================
+# EVENT HUB CONFIGURATION
+# ============================================================================
 event_hub:
   connection_string: ${EVENT_HUB_CONNECTION_STRING}
-  namespace: ${EVENT_HUB_NAMESPACE}
-  event_hub_name: ${EVENT_HUB_NAME}
   batch_size: 100
   send_timeout_seconds: 30
   max_retries: 3
 
-database:
-  host: ${DB_HOST}
-  port: ${DB_PORT}
-  name: ${DB_NAME}
-  user: ${DB_USER}
-  password: ${DB_PASSWORD}
-  pool_size: 10
-  max_overflow: 20
-  pool_pre_ping: true
-  echo: false
-
+# ============================================================================
+# SERVICE SETTINGS
+# ============================================================================
 service:
-  poll_interval_minutes: 15
-  lookback_window_hours: 2
-  retention_days: 60
-  retry_interval_minutes: 5
-  max_retry_attempts: 10
-  advisory_lock_id: 987654321
-  cleanup_hour: 2  # 2 AM
+  poll_interval_minutes: 60  # How often to fetch data
+  lookback_window_hours: 1    # Fetch data from last N hours
 
-alerting:
-  smtp_host: ${SMTP_HOST}
-  smtp_port: ${SMTP_PORT}
-  smtp_user: ${SMTP_USER}
-  smtp_password: ${SMTP_PASSWORD}
-  smtp_use_tls: true
-  from_email: ${ALERT_FROM_EMAIL}
-  to_emails:
-    - ${ALERT_TO_EMAILS}
-  alert_throttle_minutes: 60
-  conditions:
-    microshare_api_failures: 5
-    microshare_api_down_minutes: 30
-    eventhub_failures: 10
-    eventhub_down_minutes: 30
-    retry_queue_depth: 100
-    dead_letter_depth: 10
-    no_data_hours: 2
+# State management (Azure Table Storage)
+state_file: "/var/lib/microshare-forwarder/state.json"  # Not used in Azure Functions
 
-health_check:
-  enabled: true
-  host: "0.0.0.0"
-  port: 8080
-
+# Logging
 logging:
   level: ${LOG_LEVEL}
-  format: "json"
-  file: "/var/log/customer-occupancy/service.log"
-  max_bytes: 104857600  # 100MB
-  backup_count: 10
   console_output: true

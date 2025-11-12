@@ -111,7 +111,7 @@ az functionapp config appsettings set \
     MICROSHARE_USERNAME="your_username" \
     MICROSHARE_PASSWORD="your_password" \
     MICROSHARE_API_KEY="your_api_key" \
-    MICROSHARE_DATA_CONTEXT="CBRE" \
+    MICROSHARE_DATA_CONTEXT="YourCompany" \
     EVENT_HUB_CONNECTION_STRING="Endpoint=sb://your-namespace.servicebus.windows.net/;SharedAccessKeyName=...;SharedAccessKey=...;EntityPath=your-hub" \
     LOG_LEVEL="INFO"
 ```
@@ -182,6 +182,129 @@ State is stored in Azure Table Storage to track:
 
 **Table:** `microshareforwarderstate`  
 **Connection:** Automatically configured via `AzureWebJobsStorage`
+
+## Configuring Data Sources (recTypes)
+
+The Azure Function supports multiple Microshare data types. Here's how to configure it for your specific data source.
+
+### Step 1: Identify Your Data Source
+
+Contact Microshare support to determine:
+
+1. **Which recType** contains your data:
+   - `io.microshare.lake.snapshot.hourly` - Hourly occupancy snapshots
+   - `io.microshare.peoplecounter.unpacked.event.agg` - 15-min people counting
+   - `io.microshare.occupancy.unpacked` - Motion sensor data
+
+2. **Your View ID** - Required for all queries (e.g., `661eabafa0a03557a44bdd6c`)
+
+3. **Your data context** - Organization identifier (e.g., `YourCompanyName`)
+
+### Step 2: Configure for Your recType
+
+#### Option A: Using config.yaml (Recommended)
+
+Edit `config.yaml` with your specific settings:
+
+```yaml
+microshare:
+  username: ${MICROSHARE_USERNAME}
+  password: ${MICROSHARE_PASSWORD}
+  api_key: ${MICROSHARE_API_KEY}
+  
+  # Your View ID from Microshare
+  view_id: "YOUR-VIEW-ID-HERE"
+  
+  # Choose your recType:
+  rec_type: "io.microshare.peoplecounter.unpacked.event.agg"
+  
+  # Your organization's data context
+  data_context: '["YourCompany","people"]'
+  
+  # Optional location filter
+  location: "Building-A"
+```
+
+#### Option B: Using Environment Variables
+
+Override config.yaml settings via Function App settings:
+
+```bash
+az functionapp config appsettings set \
+  --name microshare-forwarder-func \
+  --resource-group rg-eh-playground \
+  --settings \
+    MICROSHARE_VIEW_ID="your-view-id" \
+    MICROSHARE_REC_TYPE="io.microshare.occupancy.unpacked" \
+    MICROSHARE_DATA_CONTEXT="YourCompany"
+```
+
+### Step 3: Test Your Configuration
+
+Before deploying, test locally:
+
+```bash
+# Update local.settings.json with your settings
+func start
+
+# Trigger the function manually
+# Check logs for data retrieval
+```
+
+### Step 4: Deploy and Verify
+
+```bash
+# Deploy updated configuration
+func azure functionapp publish microshare-forwarder-func
+
+# Verify settings were applied
+az functionapp config appsettings list \
+  --name microshare-forwarder-func \
+  --resource-group rg-eh-playground \
+  --query "[?name=='MICROSHARE_REC_TYPE'].{Name:name, Value:value}"
+
+# Monitor first execution
+# (Azure Portal -> Function App -> Monitor -> Application Insights)
+```
+
+### Common Configurations
+
+#### Configuration 1: Hourly Occupancy Snapshots
+
+```bash
+MICROSHARE_REC_TYPE="io.microshare.lake.snapshot.hourly"
+MICROSHARE_DATA_CONTEXT="["YourCompany","occupancy","room"]"
+```
+
+#### Configuration 2: People Counter (15-min aggregates)
+
+```bash
+MICROSHARE_REC_TYPE="io.microshare.peoplecounter.unpacked.event.agg"
+MICROSHARE_DATA_CONTEXT="["people"]"
+```
+
+#### Configuration 3: Motion Sensors
+
+```bash
+MICROSHARE_REC_TYPE="io.microshare.occupancy.unpacked"
+MICROSHARE_DATA_CONTEXT="["room","motion"]"
+```
+
+### Switching Between recTypes
+
+To switch data sources after deployment:
+
+```bash
+# Update the recType setting
+az functionapp config appsettings set \
+  --name microshare-forwarder-func \
+  --resource-group rg-eh-playground \
+  --settings MICROSHARE_REC_TYPE="io.microshare.occupancy.unpacked"
+
+# Function will automatically use new recType on next execution
+# No code redeployment needed!
+```
+
 
 ## Troubleshooting
 

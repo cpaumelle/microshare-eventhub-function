@@ -1,5 +1,4 @@
 # Microshare to Event Hub Forwarder Configuration
-# Simplified version for azure-microshare-pull branch
 
 microshare:
   # Credentials (from environment variables)
@@ -7,14 +6,14 @@ microshare:
   password: ${MICROSHARE_PASSWORD}
   api_key: ${MICROSHARE_API_KEY}
   
-  # API parameters
-  view_id: "63f49ba62c0e2e2b0ede4992"
+  # API parameters for view-based queries
+  view_id: "YOUR_VIEW_ID_HERE"  # Get from Microshare support
   rec_type: "io.microshare.lake.snapshot.hourly"
-  data_context: '["${MICROSHARE_DATA_CONTEXT}","occupancytesting","room"]'
+  data_context: '["${MICROSHARE_DATA_CONTEXT}","occupancy","room"]'
   category: "space"
   metric: "occupancy"
   owner_org: '"[a-zA-Z]"'
-  location: "Prony"
+  location: "Building-A"  # Optional: filter by location
 
 event_hub:
   # Azure Event Hub connection (from environment variable)
@@ -28,14 +27,8 @@ service:
   poll_interval_minutes: 60  # How often to fetch (hourly default)
   lookback_window_hours: 1    # Fetch data from last N hours
 
-# State management
+# State management (not used in Azure Functions - kept for compatibility)
 state_file: "/var/lib/microshare-forwarder/state.json"
-
-# Health check endpoint (optional)
-health_check:
-  enabled: true
-  host: "0.0.0.0"
-  port: 8080
 
 # Logging
 logging:
