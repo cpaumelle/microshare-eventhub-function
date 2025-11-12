@@ -1,10 +1,8 @@
 # Microshare to Azure Event Hub - Serverless Function
 
+This Azure Function provides a secure, easy-to-deploy way for Microshare™ customers running their own Azure tenant to pull data periodically from the Microshare™ API and stream it into Azure Event Hub using a fully serverless, outbound-only architecture.
+
 **Enterprise-grade secure serverless integration** that pulls occupancy snapshots from Microshare API and forwards them to Azure Event Hub using Azure Functions.
-
-## Why This Approach is Secure
-
-### Addressing Corporate IT Security Concerns
 
 This solution is designed with enterprise security requirements in mind:
 
@@ -37,15 +35,7 @@ This solution is designed with enterprise security requirements in mind:
 - **Azure Monitor integration** - Centralized logging with your existing SIEM
 - **Azure Policy support** - Enforce organizational compliance rules
 - **SOC 2, ISO 27001, HIPAA** - Azure Functions inherits Azure's compliance certifications
-
-#### ✅ **Defense in Depth**
-- **Network isolation (optional)** - Deploy to VNet with private endpoints
-- **Managed Identity (optional)** - Eliminate connection strings entirely
-- **IP restrictions (optional)** - Lock down function to specific IPs
-- **Azure Private Link (optional)** - Keep traffic entirely on Microsoft backbone
-
-### Security Comparison: Functions vs Other Methods
-
+  
 ### Easy to Deploy & Maintain
 
 **15-Minute Deployment** - Unlike complex VM setups:
