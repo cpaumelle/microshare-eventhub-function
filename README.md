@@ -1,67 +1,48 @@
-# Microshare to Azure Event Hub - Serverless Function
+# Microshare to Azure Event Hub – Serverless Function
 
-This Azure Function provides a secure, easy-to-deploy way for Microshare™ customers running their own Azure tenant to pull data periodically from the Microshare™ API and stream it into Azure Event Hub using a fully serverless, outbound-only architecture.
+This Azure Function enables Microshare™ customers to securely and reliably retrieve data from the Microshare™ API and forward it to Azure Event Hub. The solution runs entirely within the customer’s Azure tenant and uses a serverless, outbound-only design with no inbound network exposure.
 
-**Enterprise-grade secure serverless integration** that pulls occupancy snapshots from Microshare API and forwards them to Azure Event Hub using Azure Functions.
+## Features
 
-This solution is designed with enterprise security requirements in mind:
+- **Outbound-only communication**: The function initiates all HTTPS requests; no inbound ports or public endpoints are used.
+- **Microshare™ API integration**: Authenticates using JWT tokens over TLS 1.3.
+- **Serverless execution**: Runs on Azure Functions (Python 3.11) with no VMs or containers to manage.
+- **Automatic scheduling**: Executes on an hourly timer trigger (configurable).
+- **State tracking**: Uses Azure Table Storage to store the last successful fetch timestamp.
+- **Deduplication**: Ensures only new snapshots are forwarded to Event Hub.
+- **Azure-native logging**: Application Insights provides full execution logs, metrics, and telemetry.
+- **Encrypted configuration**: All secrets stored as Azure Function App settings, encrypted at rest.
 
-#### ✅ **No Inbound Attack Surface**
-- **Outbound-only connections** - Function initiates all communication (pull model)
-- **No exposed endpoints** - No public APIs or webhooks to secure
-- **No firewall rules required** - No inbound ports to manage or protect
-- **Zero IP whitelisting** - Eliminates IP management overhead and security gaps
+## Security Architecture
 
-#### ✅ **Complete Infrastructure Control**
-- **100% within your Azure tenant** - All code, data, and credentials under your control
-- **No third-party hosting** - No external services or middleware in the data path
-- **Azure admin deploys and manages** - Full visibility and control via Azure Portal/CLI
-- **Your subscription, your rules** - Apply your organization's policies and governance
+### No Inbound Attack Surface
 
-#### ✅ **Industry-Standard Encryption & Authentication**
-- **HTTPS/TLS 1.3 encryption** - All API communication encrypted end-to-end
-- **Microshare JWT tokens** - Industry-standard authentication with automatic token refresh
-- **Certificate-based trust** - Public certificate validation, no custom certificate management
-- **Azure-managed secrets** - Credentials encrypted at rest in Azure Key Vault-backed app settings
+- No webhooks, callbacks, or public endpoints.
+- No inbound firewall rules or listener ports.
+- All communication is outbound HTTPS on port 443.
 
-#### ✅ **Minimal Attack Surface**
-- **Serverless architecture** - No persistent VMs to patch, harden, or secure
-- **Ephemeral execution** - Function instances spin up, execute, and terminate
-- **Automatic runtime updates** - Microsoft manages Python runtime and security patches
-- **No OS-level access** - No SSH, RDP, or shell access to compromise
+### Runs Entirely in Customer’s Azure Tenant
 
-#### ✅ **Built-in Compliance & Auditing**
-- **Application Insights logging** - Complete audit trail of all executions
-- **Azure Monitor integration** - Centralized logging with your existing SIEM
-- **Azure Policy support** - Enforce organizational compliance rules
-- **SOC 2, ISO 27001, HIPAA** - Azure Functions inherits Azure's compliance certifications
-  
-### Easy to Deploy & Maintain
+- All compute, storage, and messaging resources reside in the customer’s subscription.
+- No third-party infrastructure is involved in the data path.
 
-**15-Minute Deployment** - Unlike complex VM setups:
-- ✅ **5 CLI commands** to deploy (no complex configuration)
-- ✅ **No OS installation** or hardening required
-- ✅ **No firewall rules** to configure or test
-- ✅ **No certificate management** (Microshare uses public CAs)
-- ✅ **Zero ongoing maintenance** - Microsoft manages patches and updates
-- ✅ **Deploy from laptop** - No need for jump boxes or bastion hosts
+### Encryption & Authentication
 
-**IT Security teams love it because:**
-- Security review is straightforward (outbound-only, standard Azure)
-- No ongoing security maintenance burden
-- Fits existing Azure governance and compliance
-- Audit trail built-in via Application Insights
-- Easy to demonstrate compliance to auditors
+- TLS 1.3 for all API communication.
+- Microshare™ JWT authentication with automatic token refresh.
+- Function App settings encrypted at rest with Azure-managed keys.
 
-| Security Concern | This Solution | Alternative Approaches |
-|-----------------|---------------|----------------------|
-| **Inbound firewall rules** | ✅ None required | ❌ VMs require open ports |
-| **OS patching** | ✅ Microsoft managed | ❌ Manual patching required |
-| **Secret management** | ✅ Azure encrypted settings | ⚠️ Often stored in config files |
-| **Infrastructure control** | ✅ 100% your Azure tenant | ❌ Third-party SaaS or middleware |
-| **Audit trail** | ✅ Application Insights built-in | ⚠️ Manual logging setup |
-| **Attack surface** | ✅ Minimal (ephemeral execution) | ❌ Persistent VMs/containers |
-| **Compliance certifications** | ✅ Inherits Azure certifications | ⚠️ Depends on hosting |
+### Minimal Attack Surface
+
+- Ephemeral compute: Function instances start, execute, and shut down automatically.
+- No operating system to patch, maintain, or access (no SSH/RDP).
+- Azure manages all runtime and security updates.
+
+### Auditing & Compliance
+
+- Application Insights captures execution history, API calls, errors, and timing.
+- Logs and metrics integrate with Azure Monitor and SIEM systems.
+- Azure Functions inherit Azure’s platform certifications (SOC 2, ISO 27001, HIPAA, and others).
 
 ## Architecture
 
@@ -71,55 +52,28 @@ This solution is designed with enterprise security requirements in mind:
 │  (HTTPS/TLS 1.3 + JWT tokens)   │
 └────────────┬────────────────────┘
              │ Outbound HTTPS only
-             │ (Port 443)
              │
         [Timer Trigger]
-        Every hour at :00
+        Every hour
              │
 ┌────────────▼────────────────────┐
-│    Azure Function               │
-│    (Your Azure Tenant)          │
-│  ┌──────────────────────────┐   │
-│  │ Serverless Python 3.11   │   │
-│  │ - Fetch data             │   │
-│  │ - Track state            │   │
-│  │ - Deduplicate            │   │
-│  └──────────────────────────┘   │
-│  Ephemeral execution (no VM)    │
+│        Azure Function           │
+│   (Python 3.11, serverless)     │
+│  - Fetch data                   │
+│  - Track state                  │
+│  - Deduplicate                  │
 └────────────┬────────────────────┘
              │
 ┌────────────▼────────────────────┐
-│  Azure Table Storage            │
-│  (State persistence)            │
-│  - Encrypted at rest            │
-│  - Your subscription            │
-└─────────────────────────────────┘
+│   Azure Table Storage           │
+│     (State persistence)         │
+└────────────┬────────────────────┘
              │
 ┌────────────▼────────────────────┐
-│  Azure Event Hub                │
-│  (Data ingress)                 │
-│  - Your Event Hub namespace     │
-│  - Full RBAC control            │
+│        Azure Event Hub          │
+│        (Data ingestion)         │
 └─────────────────────────────────┘
 ```
-
-**Security Benefits:**
-- All components within your Azure tenant
-- No data leaves your control
-- No third-party services in data path
-- Standard Azure security controls apply
-
-## Features
-
-✅ **Outbound-only security model** - No inbound firewall rules  
-✅ **Enterprise authentication** - HTTPS + JWT tokens from Microshare  
-✅ **Full Azure control** - Deploy and manage via Azure Portal/CLI  
-✅ **Encrypted secrets** - Credentials stored in Azure app settings  
-✅ **Automatic scheduling** - Runs hourly via timer trigger  
-✅ **State persistence** - Azure Table Storage tracks last fetch time  
-✅ **Deduplication** - Prevents sending duplicate snapshots  
-✅ **Complete audit trail** - Application Insights logging  
-✅ **Zero maintenance** - Microsoft manages runtime and patches  
 
 ## Quick Start
 
@@ -129,276 +83,113 @@ This solution is designed with enterprise security requirements in mind:
   - Storage Accounts
   - Function Apps
   - Event Hubs
-- Azure CLI installed
+- Azure CLI
 - Azure Functions Core Tools v4
-- Microshare API credentials (JWT-authenticated)
+- Microshare™ API credentials
 - Event Hub connection string
 
-### Deploy in 5 Steps
+### Deployment
 
 ```bash
-# 1. Authenticate with Azure
+# Authenticate with Azure
 az login
 
-# 2. Create storage account
-az storage account create \
-  --name <unique-storage-name> \
-  --resource-group <your-resource-group> \
-  --location <region> \
-  --sku Standard_LRS
+# Create storage account
+az storage account create   --name <storage-name>   --resource-group <resource-group>   --location <region>   --sku Standard_LRS
 
-# 3. Create Function App
-az functionapp create \
-  --name <unique-function-name> \
-  --storage-account <storage-name> \
-  --resource-group <your-resource-group> \
-  --consumption-plan-location <region> \
-  --runtime python \
-  --runtime-version 3.11 \
-  --functions-version 4 \
-  --os-type Linux
+# Create Function App
+az functionapp create   --name <function-name>   --storage-account <storage-name>   --resource-group <resource-group>   --consumption-plan-location <region>   --runtime python   --runtime-version 3.11   --functions-version 4   --os-type Linux
 
-# 4. Deploy function code
+# Deploy code
 func azure functionapp publish <function-name>
 
-# 5. Configure environment variables (encrypted by Azure)
-az functionapp config appsettings set \
-  --name <function-name> \
-  --resource-group <your-resource-group> \
-  --settings \
-    MICROSHARE_USERNAME="your_username" \
-    MICROSHARE_PASSWORD="your_password" \
-    MICROSHARE_API_KEY="your_api_key" \
-    MICROSHARE_DATA_CONTEXT="your_context" \
-    EVENT_HUB_CONNECTION_STRING="your_connection_string" \
-    LOG_LEVEL="INFO"
+# Configure application settings
+az functionapp config appsettings set   --name <function-name>   --resource-group <resource-group>   --settings     MICROSHARE_USERNAME="your_username"     MICROSHARE_PASSWORD="your_password"     MICROSHARE_API_KEY="your_api_key"     MICROSHARE_DATA_CONTEXT="your_context"     EVENT_HUB_CONNECTION_STRING="your_connection_string"     LOG_LEVEL="INFO"
 ```
-
-**That's it!** Your function will run automatically every hour with enterprise security.
-
-## Detailed Documentation
-
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide with troubleshooting
-- **[SECURITY.md](SECURITY.md)** - Detailed security architecture and best practices
 
 ## Configuration
 
 ### Schedule
 
-Default: Every hour at :00 (`0 0 * * * *`)
+Default schedule: hourly (`0 0 * * * *`)
 
-Change the schedule in `function_app.py`:
-
-```python
-@app.timer_trigger(
-    schedule="0 */15 * * * *",  # Every 15 minutes
-    # schedule="0 0 * * * *",   # Every hour (default)
-    # schedule="0 */30 * * * *", # Every 30 minutes
-    arg_name="mytimer",
-    run_on_startup=False,
-    use_monitor=False
-)
-```
+Configurable in `function_app.py`.
 
 ### Environment Variables
 
-Required settings (configured as Function App settings, encrypted by Azure):
+| Variable | Description |
+| --- | --- |
+| `MICROSHARE_USERNAME` | Microshare API username |
+| `MICROSHARE_PASSWORD` | Microshare API password |
+| `MICROSHARE_API_KEY` | Microshare API key (JWT) |
+| `MICROSHARE_DATA_CONTEXT` | Data context filter |
+| `EVENT_HUB_CONNECTION_STRING` | Event Hub connection string including `EntityPath` |
+| `LOG_LEVEL` | Logging level (INFO/DEBUG) |
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `MICROSHARE_USERNAME` | Microshare API username | `user@company.com` |
-| `MICROSHARE_PASSWORD` | Microshare API password | `your_password` |
-| `MICROSHARE_API_KEY` | Microshare API key (JWT) | `UUID-format-key` |
-| `MICROSHARE_DATA_CONTEXT` | Data context filter | `CBRE` |
-| `EVENT_HUB_CONNECTION_STRING` | Event Hub connection with EntityPath | `Endpoint=sb://...;EntityPath=hub` |
-| `LOG_LEVEL` | Logging level | `INFO` or `DEBUG` |
+## Monitoring
 
-**Security Note:** All settings are encrypted at rest by Azure and never appear in code or logs.
+- Application Insights provides logs, traces, exceptions, dependencies, and performance metrics.
+- Azure Monitor can aggregate logs into dashboards or SIEM tools.
+- Kusto queries allow filtering by timestamp, message content, or severity.
 
-### Application Settings
-
-Edit `config.yaml` to customize:
-
-- Microshare view ID
-- Location filters
-- API timeouts
-- Retry configuration
-
-## Monitoring & Audit Trail
-
-### View Logs in Azure Portal
-
-1. Go to https://portal.azure.com
-2. Search for your Function App
-3. Navigate to **Monitor** → **Application Insights**
-4. Query recent executions:
+Example:
 
 ```kusto
 traces
 | where timestamp > ago(24h)
-| where message contains "Microshare Forwarder"
-| project timestamp, message, severityLevel
+| where message contains "Microshare"
 | order by timestamp desc
 ```
 
-### Key Metrics
-
-- **Execution Count:** ~24/day (hourly schedule)
-- **Success Rate:** Should be 100%
-- **Duration:** Typically 5-30 seconds
-- **Data Volume:** Check snapshots sent in logs
-- **Authentication Events:** All API calls logged
-
-### Audit Trail
-
-Application Insights provides:
-- Complete execution history
-- API authentication attempts
-- Error conditions and retries
-- Data volume metrics
-- Performance telemetry
-
-## Cost Efficiency
-
-**Monthly Cost: ~$3**
-
-| Component | Cost |
-|-----------|------|
-| Function executions (720/month) | FREE* |
-| Execution time (~2.5 hours/month) | FREE* |
-| Storage Account (Standard LRS) | ~$2 |
-| Application Insights | ~$1 |
-
-*Azure Functions includes 1M free executions and 400,000 GB-s free per month
-
-**Compare to VM alternatives:** $50-100/month plus patching overhead
-
 ## Troubleshooting
 
-### Function not executing?
-
-```bash
-# Check function status
-az functionapp show \
-  --name <function-name> \
-  --resource-group <resource-group> \
-  --query "{name:name, state:state}"
-```
-
-### Authentication errors?
-
-Verify environment variables are set:
-
-```bash
-az functionapp config appsettings list \
-  --name <function-name> \
-  --resource-group <resource-group>
-```
-
-### No data in Event Hub?
-
-1. Check Application Insights logs for errors
-2. Verify Event Hub connection string includes `EntityPath=<hub-name>`
-3. Confirm Microshare credentials are correct
-4. Check state table for last_fetch_time
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed troubleshooting.
+- Validate Function App state using `az functionapp show`.
+- Verify application settings via `az functionapp config appsettings list`.
+- Check for errors in Application Insights.
+- Confirm Event Hub connection string contains an `EntityPath`.
+- Review state table entries for last fetch timestamps.
 
 ## Development
 
-### Local Testing
-
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Create local settings
 cp .env.example .env
-# Edit .env with your credentials
-
-# Run locally
 func start
-```
-
-### Update Deployed Function
-
-```bash
-# Make code changes
-git commit -am "Description of changes"
-
-# Redeploy
-func azure functionapp publish <function-name>
 ```
 
 ## Project Structure
 
 ```
-├── function_app.py           # Main function entry point (timer trigger)
+├── function_app.py
 ├── app/
-│   ├── config.py             # Configuration loader
-│   ├── microshare_client.py  # Microshare API client (JWT auth)
-│   ├── eventhub_client.py    # Event Hub client
-│   └── state_manager_azure.py# Azure Table Storage state mgmt
-├── host.json                 # Function runtime config
-├── requirements.txt          # Python dependencies
-├── config.yaml               # Application configuration
-├── .env.example              # Template for credentials
-├── DEPLOYMENT.md             # Detailed deployment guide
-└── SECURITY.md               # Security documentation
+│   ├── config.py
+│   ├── microshare_client.py
+│   ├── eventhub_client.py
+│   └── state_manager_azure.py
+├── host.json
+├── requirements.txt
+├── config.yaml
+├── .env.example
+├── DEPLOYMENT.md
+└── SECURITY.md
 ```
 
-## Enhanced Security Options
+## Optional Security Enhancements
 
-For additional security hardening:
+### Managed Identity (no connection strings)
 
-### Option 1: Managed Identity (Eliminate Connection Strings)
-```bash
-# Enable system-assigned identity
-az functionapp identity assign --name <function-name> --resource-group <rg>
+- Enable system-assigned identity
+- Assign Event Hub Data Sender role
 
-# Grant Event Hub permissions via RBAC
-az role assignment create \
-  --assignee <function-principal-id> \
-  --role "Azure Event Hubs Data Sender" \
-  --scope <event-hub-resource-id>
-```
+### VNet Integration
 
-### Option 2: VNet Integration (Private Network)
-```bash
-# Deploy function to VNet with private endpoints
-az functionapp vnet-integration add \
-  --name <function-name> \
-  --resource-group <rg> \
-  --vnet <vnet-name> \
-  --subnet <subnet-name>
-```
+- Deploy Function App with VNet integration
+- Use private endpoints for storage and Event Hub
 
-### Option 3: IP Restrictions
-```bash
-# Lock down function to specific corporate IPs
-az functionapp config access-restriction add \
-  --name <function-name> \
-  --resource-group <rg> \
-  --rule-name "CorporateNetwork" \
-  --priority 100 \
-  --ip-address <ip-range>
-```
+### IP Restrictions
 
-See [SECURITY.md](SECURITY.md) for detailed security architecture and best practices.
-
-## Support
-
-- **Issues:** Report bugs or feature requests via GitHub Issues
-- **Documentation:** See [DEPLOYMENT.md](DEPLOYMENT.md)
-- **Azure Functions:** https://docs.microsoft.com/azure/azure-functions/
+- Add IP allowlists via Function App access restriction rules
 
 ## License
 
-Copyright © 2025. All rights reserved.
-
----
-
-**Live Demo Deployment:**
-- Function: `microshare-forwarder-func.azurewebsites.net`
-- Region: UK South
-- Deployed: 2025-11-12
+© Microshare 2025. All rights reserved.
