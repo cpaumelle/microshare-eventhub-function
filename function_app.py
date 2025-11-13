@@ -1,12 +1,64 @@
 import azure.functions as func
 import logging
+import os
 from datetime import datetime
 from app.config import get_config
 from app.microshare_client import MicroshareClient
 from app.eventhub_client import EventHubClient
 from app.state_manager_azure import StateManagerAzure
+from app.state_manager import StateManager
 
 app = func.FunctionApp()
+
+def get_state_manager(config, table_name: str):
+    """
+    Factory function to get the appropriate state manager.
+    Uses Azure Table Storage if running in Azure Functions,
+    otherwise uses local file-based storage for VM deployment.
+    """
+    # Check if running in Azure Functions environment
+    if os.environ.get('AzureWebJobsStorage'):
+        logging.info(f"Using Azure Table Storage state manager (table: {table_name})")
+        return StateManagerAzure(config, table_name=table_name)
+    else:
+        logging.info(f"Using local file-based state manager (file: /var/lib/microshare-forwarder/{table_name}.json)")
+        # Use separate JSON files for each "table"
+        return StateManager(state_file_path=f"/var/lib/microshare-forwarder/{table_name}.json")
+
+def normalize_datetime(dt) -> datetime:
+    """Convert various datetime formats to datetime object"""
+    if isinstance(dt, datetime):
+        return dt
+    elif isinstance(dt, str):
+        return datetime.fromisoformat(dt)
+    elif dt is None:
+        # Default to 24 hours ago
+        from datetime import timedelta
+        return datetime.utcnow() - timedelta(hours=24)
+    else:
+        raise ValueError(f"Cannot convert {type(dt)} to datetime")
+
+def update_state_unified(state_mgr, last_fetch_time: datetime, snapshots_sent: int):
+    """
+    Unified state update that works with both state managers.
+    Handles API differences between StateManagerAzure and StateManager.
+    """
+    if isinstance(state_mgr, StateManagerAzure):
+        # Azure state manager expects datetime objects
+        state_mgr.update_state(
+            last_fetch_time=last_fetch_time,
+            snapshots_sent=snapshots_sent
+        )
+    elif isinstance(state_mgr, StateManager):
+        # Local state manager expects ISO strings
+        state_mgr.update_after_fetch(
+            fetch_timestamp=last_fetch_time.isoformat(),
+            snapshots_sent=snapshots_sent,
+            duplicates_skipped=0,
+            success=True
+        )
+    else:
+        raise ValueError(f"Unknown state manager type: {type(state_mgr)}")
 
 # ============================================================================
 # FUNCTION 1: Hourly Snapshot Data
@@ -37,10 +89,10 @@ def hourly_snapshot_forwarder(mytimer: func.TimerRequest) -> None:
         ms_client = MicroshareClient(config)
         eh_client = EventHubClient(config)
 
-        # Use dedicated state table for hourly snapshots
-        state_mgr = StateManagerAzure(config, table_name='snapshotstate')
+        # Use dedicated state table for hourly snapshots (auto-detects Azure vs local)
+        state_mgr = get_state_manager(config, table_name='snapshotstate')
 
-        last_fetch_time = state_mgr.get_last_fetch_time()
+        last_fetch_time = normalize_datetime(state_mgr.get_last_fetch_time())
         current_time = datetime.utcnow()
 
         identity_filter = config.get('microshare', {}).get('identity', '')
@@ -59,7 +111,8 @@ def hourly_snapshot_forwarder(mytimer: func.TimerRequest) -> None:
             sent_count = eh_client.send_batch(snapshots)
             logging.info(f"Sent {sent_count} snapshots to Event Hub")
 
-            state_mgr.update_state(
+            update_state_unified(
+                state_mgr=state_mgr,
                 last_fetch_time=current_time,
                 snapshots_sent=sent_count
             )
@@ -104,10 +157,10 @@ def people_counter_forwarder(mytimer: func.TimerRequest) -> None:
         ms_client = MicroshareClient(config)
         eh_client = EventHubClient(config)
 
-        # Use dedicated state table for people counter
-        state_mgr = StateManagerAzure(config, table_name='peoplecounterstate')
+        # Use dedicated state table for people counter (auto-detects Azure vs local)
+        state_mgr = get_state_manager(config, table_name='peoplecounterstate')
 
-        last_fetch_time = state_mgr.get_last_fetch_time()
+        last_fetch_time = normalize_datetime(state_mgr.get_last_fetch_time())
         current_time = datetime.utcnow()
 
         identity_filter = config.get('microshare', {}).get('identity', '')
@@ -126,7 +179,8 @@ def people_counter_forwarder(mytimer: func.TimerRequest) -> None:
             sent_count = eh_client.send_batch(events)
             logging.info(f"Sent {sent_count} people counter events to Event Hub")
 
-            state_mgr.update_state(
+            update_state_unified(
+                state_mgr=state_mgr,
                 last_fetch_time=current_time,
                 snapshots_sent=sent_count
             )
