@@ -52,7 +52,16 @@ class EventHubClient:
         self.max_batch_size = eh_config.get('batch_size', 100)
         self._producers: List[EventHubProducerClient] = []
 
-        logger.info(f"EventHubClient initialized with {len(self.connection_strings)} Event Hub(s)")
+        # Log configuration with hub names
+        if len(self.connection_strings) > 1:
+            logger.info(f"EventHubClient initialized with {len(self.connection_strings)} Event Hubs (MULTI-HUB BROADCASTING)")
+            for i, conn_str in enumerate(self.connection_strings):
+                hub_name = "unknown"
+                if "EntityPath=" in conn_str:
+                    hub_name = conn_str.split("EntityPath=")[1].split(";")[0]
+                logger.info(f"  Hub {i+1}: {hub_name}")
+        else:
+            logger.info(f"EventHubClient initialized with {len(self.connection_strings)} Event Hub(s)")
     
     def _get_producers(self) -> List[EventHubProducerClient]:
         """Get or create Event Hub producer clients for all configured hubs"""
@@ -65,7 +74,11 @@ class EventHubClient:
                     hub_name = "unknown"
                     if "EntityPath=" in conn_str:
                         hub_name = conn_str.split("EntityPath=")[1].split(";")[0]
-                    logger.info(f"Event Hub producer {i+1} created: {hub_name}")
+
+                    if len(self.connection_strings) > 1:
+                        logger.info(f"Event Hub producer {i+1}/{len(self.connection_strings)} connected: {hub_name}")
+                    else:
+                        logger.debug(f"Event Hub producer {i+1} created: {hub_name}")
             except Exception as e:
                 logger.error(f"Failed to create Event Hub producer: {e}")
                 raise EventHubClientError(f"Failed to create producer: {e}")
@@ -151,12 +164,18 @@ class EventHubClient:
                     event_batch.append(event)
 
                 # Send batch to ALL Event Hubs
-                logger.debug(f"Sending batch {batch_count} with {len(event_batch)} events to {len(producers)} hub(s)")
+                if len(producers) > 1:
+                    logger.info(f"Sending batch {batch_count} with {len(event_batch)} events to {len(producers)} Event Hubs simultaneously")
+                else:
+                    logger.debug(f"Sending batch {batch_count} with {len(event_batch)} events to {len(producers)} hub(s)")
 
                 for hub_idx, producer in enumerate(producers):
                     with producer:
                         producer.send_batch(event_batch)
-                    logger.debug(f"  → Hub {hub_idx + 1}: Batch {batch_count} sent")
+                    if len(producers) > 1:
+                        logger.info(f"  ✓ Hub {hub_idx + 1}/{len(producers)}: Batch {batch_count} delivered")
+                    else:
+                        logger.debug(f"  → Hub {hub_idx + 1}: Batch {batch_count} sent")
 
                 total_sent += len(batch)
                 logger.info(f"Batch {batch_count} sent: {len(batch)} events")
