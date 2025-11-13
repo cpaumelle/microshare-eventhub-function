@@ -216,7 +216,10 @@ class MicroshareClient:
         page_size: int = 999
     ) -> List[Dict[str, Any]]:
         """
-        Fetch occupancy snapshots in time range with automatic pagination
+        [DEPRECATED] Fetch occupancy snapshots in time range with automatic pagination
+
+        DEPRECATED: This method has limited coverage and doesn't support identity filtering.
+        Use get_snapshot_full_coverage() or get_people_counter_full_coverage() instead.
 
         Args:
             from_time: Start time (inclusive)
@@ -226,6 +229,10 @@ class MicroshareClient:
         Returns:
             List of snapshot dictionaries
         """
+        logger.warning(
+            "get_snapshots_in_range() is deprecated. "
+            "Use get_snapshot_full_coverage() or get_people_counter_full_coverage() instead."
+        )
         token = self._get_token()
 
         # Format timestamps for API
@@ -234,20 +241,42 @@ class MicroshareClient:
 
         # Get config parameters
         ms_config = self.config.get('microshare', {})
+        rec_type = ms_config.get('rec_type')
 
-        # Build base parameters (using aggregated endpoint)
+        # Build base parameters - common for all recTypes
         base_params = {
             "id": ms_config.get('view_id'),
-            "recType": ms_config.get('rec_type'),
-            "dataContext": ms_config.get('data_context'),
-            "category": ms_config.get('category'),
-            "metric": ms_config.get('metric'),
-            "ownerOrg": ms_config.get('owner_org'),
-            "loc1": ms_config.get('location'),
+            "recType": rec_type,
             "from": from_str,
             "to": to_str,
             "pageSize": min(page_size, 999)  # Enforce max
         }
+
+        # Add recType-specific parameters
+        if 'peoplecounter' in rec_type:
+            # People counter specific parameters (from MICROSHARE_PEOPLE_COUNTER_QUERY_GUIDE.md)
+            # Note: field4/5/6 are required placeholders to avoid 503 errors
+            base_params.update({
+                "dataContext": ms_config.get('data_context', '["people"]'),
+                "loc1": ms_config.get('location'),
+                "field1": "daily_total",
+                "field2": "meta",
+                "field3": "change",
+                "field4": "field4",  # Required placeholder
+                "field5": "field5",  # Required placeholder
+                "field6": "field6"   # Required placeholder
+            })
+            logger.info("Using people counter parameter set")
+        else:
+            # Hourly snapshot parameters (default)
+            base_params.update({
+                "dataContext": ms_config.get('data_context'),
+                "category": ms_config.get('category'),
+                "metric": ms_config.get('metric'),
+                "ownerOrg": ms_config.get('owner_org'),
+                "loc1": ms_config.get('location')
+            })
+            logger.info("Using hourly snapshot parameter set")
 
         headers = {
             "Authorization": f"Bearer {token}",
@@ -323,7 +352,299 @@ class MicroshareClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"API request failed on page {page}: {e}")
             raise MicroshareAPIError(f"Failed to fetch snapshots: {e}")
-    
+
+    def get_people_counter_full_coverage(
+        self,
+        from_time: datetime,
+        to_time: datetime
+    ) -> List[Dict[str, Any]]:
+        """
+        Get full 24-hour people counter data with identity filtering.
+
+        Strategy:
+        1. Query first view (fast, limited coverage) to discover locations
+        2. Filter by identity (owner.org)
+        3. Query dashboard view per location for full 24h coverage
+        4. Flatten line[] arrays into individual events
+
+        Args:
+            from_time: Start time (inclusive)
+            to_time: End time (inclusive)
+
+        Returns:
+            List of flattened people counter events with full 24h coverage
+        """
+        token = self._get_token()
+        ms_config = self.config.get('microshare', {})
+        identity_filter = ms_config.get('identity', '')
+
+        logger.info(f"Getting full people counter coverage with identity filter: {identity_filter}")
+
+        # Step 1: Query first view to discover locations
+        from_str = from_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        to_str = to_time.strftime("%Y-%m-%dT%H:%M:%S.999Z")
+
+        # Get people counter config
+        pc_config = ms_config.get('people_counter', {})
+
+        discovery_params = {
+            "id": pc_config.get('discovery_view_id'),
+            "recType": pc_config.get('rec_type', 'io.microshare.peoplecounter.unpacked.event.agg'),
+            "from": from_str,
+            "to": to_str,
+            "pageSize": 999,
+            "dataContext": pc_config.get('data_context', '["people"]'),
+            "field1": "daily_total",
+            "field2": "meta",
+            "field3": "change",
+            "field4": "field4",
+            "field5": "field5",
+            "field6": "field6"
+        }
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            response = self.session.get(
+                "https://api.microshare.io/share/io.microshare.fm.master.agg/",
+                params=discovery_params,
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+
+            discovery_records = response.json().get('objs', [])
+            logger.info(f"Discovery query returned {len(discovery_records)} records")
+
+            # Step 2: Filter by identity and extract unique locations
+            locations_for_identity = set()
+            for record in discovery_records:
+                try:
+                    owner_org = record['data']['owner']['org']
+
+                    # Check if identity filter matches (case-insensitive substring match)
+                    if identity_filter and identity_filter.upper() not in owner_org.upper():
+                        continue
+
+                    # Extract location from meta.device
+                    location = record['data']['data']['meta']['device'][0]
+                    locations_for_identity.add(location)
+
+                except (KeyError, TypeError, IndexError):
+                    continue
+
+            logger.info(f"Found {len(locations_for_identity)} unique locations for identity '{identity_filter}': {sorted(locations_for_identity)}")
+
+            # Step 3: Query dashboard view for each location
+            all_events = []
+
+            for location in sorted(locations_for_identity):
+                logger.info(f"Querying dashboard view for location: {location}")
+
+                dashboard_params = {
+                    "id": pc_config.get('dashboard_view_id'),
+                    "recType": pc_config.get('rec_type', 'io.microshare.peoplecounter.unpacked.event.agg'),
+                    "from": from_str,
+                    "to": to_str,
+                    "dataContext": pc_config.get('data_context', '["people"]'),
+                    "field1": "daily_total",
+                    "field2": "meta",
+                    "field3": "change",
+                    "field4": "field4",
+                    "field5": "field5",
+                    "field6": "field6",
+                    "loc1": location
+                }
+
+                dashboard_response = self.session.get(
+                    "https://api.microshare.io/share/io.microshare.fm.master.agg/",
+                    params=dashboard_params,
+                    headers=headers,
+                    timeout=30
+                )
+                dashboard_response.raise_for_status()
+
+                dashboard_records = dashboard_response.json().get('objs', [])
+
+                # Step 4: Flatten line[] arrays
+                for dr in dashboard_records:
+                    line_entries = dr.get('data', {}).get('line', [])
+
+                    # Each entry in line[] is a time-series event
+                    for entry in line_entries:
+                        # Add metadata from parent record
+                        entry['_location_tags'] = dr.get('data', {}).get('_id', {}).get('tags', [])
+                        all_events.append(entry)
+
+                logger.info(f"  → Added {len(line_entries) if dashboard_records else 0} events from {location}")
+
+            logger.info(f"Total events retrieved: {len(all_events)}")
+            return all_events
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get full people counter coverage: {e}")
+            raise MicroshareAPIError(f"Failed to get people counter data: {e}")
+
+    def get_snapshot_full_coverage(
+        self,
+        from_time: datetime,
+        to_time: datetime
+    ) -> List[Dict[str, Any]]:
+        """
+        Get full 24-hour snapshot data with identity filtering.
+
+        Strategy:
+        1. Query people counter discovery view to find locations for identity
+        2. Map location names (removes configured prefix from people counter location names)
+        3. Query snapshot dashboard view per mapped location for full 24h coverage
+        4. Flatten line[] arrays into individual snapshot entries
+
+        Args:
+            from_time: Start time (inclusive)
+            to_time: End time (inclusive)
+
+        Returns:
+            List of flattened snapshot entries with full 24h coverage
+        """
+        token = self._get_token()
+        ms_config = self.config.get('microshare', {})
+        identity_filter = ms_config.get('identity', '')
+
+        logger.info(f"Getting full snapshot coverage with identity filter: {identity_filter}")
+
+        # Step 1: Query people counter discovery view to find locations for identity
+        from_str = from_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        to_str = to_time.strftime("%Y-%m-%dT%H:%M:%S.999Z")
+
+        # Get people counter config for discovery (snapshot dashboard lacks owner.org)
+        pc_config = ms_config.get('people_counter', {})
+
+        discovery_params = {
+            "id": pc_config.get('discovery_view_id'),
+            "recType": pc_config.get('rec_type', 'io.microshare.peoplecounter.unpacked.event.agg'),
+            "from": from_str,
+            "to": to_str,
+            "pageSize": 999,
+            "dataContext": pc_config.get('data_context', '["people"]'),
+            "field1": "daily_total",
+            "field2": "meta",
+            "field3": "change",
+            "field4": "field4",
+            "field5": "field5",
+            "field6": "field6"
+        }
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            response = self.session.get(
+                "https://api.microshare.io/share/io.microshare.fm.master.agg/",
+                params=discovery_params,
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+
+            discovery_records = response.json().get('objs', [])
+            logger.info(f"Discovery query returned {len(discovery_records)} records")
+
+            # Step 2: Filter by identity and extract unique locations
+            pc_locations = set()
+            for record in discovery_records:
+                try:
+                    owner_org = record['data']['owner']['org']
+
+                    # Check if identity filter matches (case-insensitive substring match)
+                    if identity_filter and identity_filter.upper() not in owner_org.upper():
+                        continue
+
+                    # Extract location from meta.device
+                    location = record['data']['data']['meta']['device'][0]
+                    pc_locations.add(location)
+
+                except (KeyError, TypeError, IndexError):
+                    continue
+
+            logger.info(f"Found {len(pc_locations)} unique locations for identity '{identity_filter}': {sorted(pc_locations)}")
+
+            # Step 3: Map location names for snapshot queries
+            # Example: "PREFIX Location" → "Location"
+            location_prefix = ms_config.get('location_prefix', '')
+            snapshot_locations = []
+            for pc_loc in sorted(pc_locations):
+                # Remove configured prefix (e.g., "COMPANY " → "")
+                if location_prefix:
+                    snapshot_loc = pc_loc.replace(f"{location_prefix} ", "")
+                else:
+                    snapshot_loc = pc_loc
+                snapshot_locations.append((pc_loc, snapshot_loc))
+
+            logger.info(f"Location mapping (PC → Snapshot): {snapshot_locations}")
+
+            # Step 4: Query snapshot dashboard for each mapped location
+            all_snapshots = []
+
+            # Get snapshot config
+            snapshot_config = ms_config.get('snapshot', {})
+
+            for pc_loc, snapshot_loc in snapshot_locations:
+                logger.info(f"Querying snapshot dashboard for location: {snapshot_loc} (from PC: {pc_loc})")
+
+                snapshot_params = {
+                    "id": snapshot_config.get('dashboard_view_id'),
+                    "recType": snapshot_config.get('rec_type', 'io.microshare.lake.snapshot.hourly'),
+                    "from": from_str,
+                    "to": to_str,
+                    "dataContext": snapshot_config.get('data_context', '[]'),
+                    "field1": "current",
+                    "field2": "field2",
+                    "field3": "field3",
+                    "field4": "field4",
+                    "field5": "field5",
+                    "field6": "field6",
+                    "category": snapshot_config.get('category', 'space'),
+                    "metric": snapshot_config.get('metric', 'occupancy'),
+                    "ownerOrg": snapshot_config.get('owner_org', '"[a-zA-Z]"'),
+                    "loc1": snapshot_loc
+                }
+
+                snapshot_response = self.session.get(
+                    "https://api.microshare.io/share/io.microshare.fm.master.agg/",
+                    params=snapshot_params,
+                    headers=headers,
+                    timeout=30
+                )
+                snapshot_response.raise_for_status()
+
+                snapshot_records = snapshot_response.json().get('objs', [])
+
+                # Step 5: Flatten line[] arrays
+                for sr in snapshot_records:
+                    line_entries = sr.get('data', {}).get('line', [])
+
+                    # Each entry in line[] is an hourly snapshot
+                    for entry in line_entries:
+                        # Add metadata from parent record
+                        entry['_location_tags'] = sr.get('data', {}).get('_id', {}).get('tags', [])
+                        entry['_location'] = snapshot_loc
+                        entry['_pc_location'] = pc_loc  # Original people counter location name
+                        all_snapshots.append(entry)
+
+                logger.info(f"  → Added {len(line_entries) if snapshot_records else 0} snapshots from {snapshot_loc}")
+
+            logger.info(f"Total snapshots retrieved: {len(all_snapshots)}")
+            return all_snapshots
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get full snapshot coverage: {e}")
+            raise MicroshareAPIError(f"Failed to get snapshot data: {e}")
+
     def _transform_snapshot(self, raw_snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """Transform raw Microshare snapshot to standardized format"""
         data = raw_snapshot.get('data', {})

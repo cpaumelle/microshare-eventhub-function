@@ -5,15 +5,28 @@ microshare:
   username: ${MICROSHARE_USERNAME}
   password: ${MICROSHARE_PASSWORD}
   api_key: ${MICROSHARE_API_KEY}
-  
-  # API parameters for view-based queries
-  view_id: "YOUR_VIEW_ID_HERE"  # Get from Microshare support
-  rec_type: "io.microshare.lake.snapshot.hourly"
-  data_context: '["${MICROSHARE_DATA_CONTEXT}","occupancy","room"]'
-  category: "space"
-  metric: "occupancy"
-  owner_org: '"[a-zA-Z]"'
-  location: "Building-A"  # Optional: filter by location
+
+  # Identity filter (filters by owner.org field)
+  identity: ${MICROSHARE_IDENTITY}
+
+  # People Counter View IDs
+  people_counter:
+    discovery_view_id: ${MICROSHARE_PC_DISCOVERY_VIEW_ID}  # View for location discovery (has owner.org)
+    dashboard_view_id: ${MICROSHARE_PC_DASHBOARD_VIEW_ID}  # Dashboard view for full 24h coverage
+    data_context: ${MICROSHARE_PC_DATA_CONTEXT}  # e.g., '["people"]'
+    rec_type: "io.microshare.peoplecounter.unpacked.event.agg"
+
+  # Snapshot View IDs
+  snapshot:
+    dashboard_view_id: ${MICROSHARE_SNAPSHOT_DASHBOARD_VIEW_ID}  # Dashboard view for hourly snapshots
+    data_context: ${MICROSHARE_SNAPSHOT_DATA_CONTEXT}  # e.g., '["context1","context2","context3"]'
+    rec_type: "io.microshare.lake.snapshot.hourly"
+    category: ${MICROSHARE_SNAPSHOT_CATEGORY}  # e.g., "space"
+    metric: ${MICROSHARE_SNAPSHOT_METRIC}  # e.g., "occupancy"
+    owner_org: '"[a-zA-Z]"'
+
+  # Location name mapping (for snapshot queries)
+  location_prefix: ${MICROSHARE_LOCATION_PREFIX}  # Prefix to remove when mapping PC location to snapshot location
 
 event_hub:
   # Azure Event Hub connection (from environment variable)

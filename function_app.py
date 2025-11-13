@@ -25,46 +25,47 @@ def hourly_snapshot_forwarder(mytimer: func.TimerRequest) -> None:
     """
     Fetch hourly occupancy snapshots and forward to Azure Event Hub.
     Uses separate state tracking: 'snapshotstate'
+    Uses full 24h coverage with identity filtering (same as people counter)
     """
     logging.info("="*80)
     logging.info("Hourly Snapshot Forwarder - Starting")
     logging.info("="*80)
-    
+
     try:
         config = get_config()
-        
-        # Override recType for hourly snapshots
-        config['microshare']['rec_type'] = 'io.microshare.lake.snapshot.hourly'
-        
+
         ms_client = MicroshareClient(config)
         eh_client = EventHubClient(config)
-        
+
         # Use dedicated state table for hourly snapshots
         state_mgr = StateManagerAzure(config, table_name='snapshotstate')
-        
+
         last_fetch_time = state_mgr.get_last_fetch_time()
         current_time = datetime.utcnow()
-        
+
+        identity_filter = config.get('microshare', {}).get('identity', '')
         logging.info(f"Fetching hourly snapshots since {last_fetch_time}")
-        
-        snapshots = ms_client.get_snapshots_in_range(
+        logging.info(f"Identity filter: {identity_filter}")
+
+        # Use new method with full 24h coverage and identity filtering
+        snapshots = ms_client.get_snapshot_full_coverage(
             from_time=last_fetch_time,
             to_time=current_time
         )
-        
-        logging.info(f"Retrieved {len(snapshots)} snapshot records")
-        
+
+        logging.info(f"Retrieved {len(snapshots)} snapshot entries (full 24h coverage)")
+
         if snapshots:
             sent_count = eh_client.send_batch(snapshots)
             logging.info(f"Sent {sent_count} snapshots to Event Hub")
-            
+
             state_mgr.update_state(
                 last_fetch_time=current_time,
                 snapshots_sent=sent_count
             )
-        
+
         logging.info("Hourly Snapshot Forwarder - SUCCESS")
-        
+
     except Exception as e:
         logging.error(f"Hourly Snapshot Forwarder FAILED: {e}")
         logging.exception("Exception details:")
@@ -72,11 +73,11 @@ def hourly_snapshot_forwarder(mytimer: func.TimerRequest) -> None:
 
 
 # ============================================================================
-# FUNCTION 2: People Counter Data (OPTIONAL)
+# FUNCTION 2: People Counter Data
 # ============================================================================
-# Fetches 15-minute aggregated people counter data
+# Fetches 15-minute interval people counter event data
+# Uses view-based query method (see MICROSHARE_PEOPLE_COUNTER_QUERY_GUIDE.md)
 # Default schedule: Every 15 minutes
-# Comment out this entire function block if not needed
 # ============================================================================
 
 @app.timer_trigger(
@@ -87,113 +88,52 @@ def hourly_snapshot_forwarder(mytimer: func.TimerRequest) -> None:
 )
 def people_counter_forwarder(mytimer: func.TimerRequest) -> None:
     """
-    Fetch people counter data every 15 minutes.
+    Fetch people counter unpacked event data and forward to Azure Event Hub.
     Uses separate state tracking: 'peoplecounterstate'
+
+    Note: People counter data requires different view_id and recType than hourly snapshots.
+    See MICROSHARE_PEOPLE_COUNTER_QUERY_GUIDE.md for details.
     """
     logging.info("="*80)
     logging.info("People Counter Forwarder - Starting")
     logging.info("="*80)
-    
+
     try:
         config = get_config()
-        
-        # Override recType for people counter
-        config['microshare']['rec_type'] = 'io.microshare.peoplecounter.unpacked.event.agg'
-        
+
         ms_client = MicroshareClient(config)
         eh_client = EventHubClient(config)
-        
+
         # Use dedicated state table for people counter
         state_mgr = StateManagerAzure(config, table_name='peoplecounterstate')
-        
+
         last_fetch_time = state_mgr.get_last_fetch_time()
         current_time = datetime.utcnow()
-        
+
+        identity_filter = config.get('microshare', {}).get('identity', '')
         logging.info(f"Fetching people counter data since {last_fetch_time}")
-        
-        snapshots = ms_client.get_snapshots_in_range(
+        logging.info(f"Identity filter: {identity_filter}")
+
+        # Use new method with full 24h coverage and identity filtering
+        events = ms_client.get_people_counter_full_coverage(
             from_time=last_fetch_time,
             to_time=current_time
         )
-        
-        logging.info(f"Retrieved {len(snapshots)} people counter records")
-        
-        if snapshots:
-            sent_count = eh_client.send_batch(snapshots)
+
+        logging.info(f"Retrieved {len(events)} people counter events (full 24h coverage)")
+
+        if events:
+            sent_count = eh_client.send_batch(events)
             logging.info(f"Sent {sent_count} people counter events to Event Hub")
-            
+
             state_mgr.update_state(
                 last_fetch_time=current_time,
                 snapshots_sent=sent_count
             )
-        
+
         logging.info("People Counter Forwarder - SUCCESS")
-        
+
     except Exception as e:
         logging.error(f"People Counter Forwarder FAILED: {e}")
-        logging.exception("Exception details:")
-        raise
-
-
-# ============================================================================
-# FUNCTION 3: Occupancy Sensors (OPTIONAL)
-# ============================================================================
-# Fetches real-time occupancy sensor data
-# Default schedule: Every 5 minutes
-# Comment out this entire function block if not needed
-# ============================================================================
-
-@app.timer_trigger(
-    schedule="0 */5 * * * *",  # Every 5 minutes
-    arg_name="mytimer",
-    run_on_startup=False,
-    use_monitor=False
-)
-def occupancy_sensor_forwarder(mytimer: func.TimerRequest) -> None:
-    """
-    Fetch occupancy sensor data every 5 minutes.
-    Uses separate state tracking: 'occupancysensorstate'
-    """
-    logging.info("="*80)
-    logging.info("Occupancy Sensor Forwarder - Starting")
-    logging.info("="*80)
-    
-    try:
-        config = get_config()
-        
-        # Override recType for occupancy sensors
-        config['microshare']['rec_type'] = 'io.microshare.occupancy.unpacked'
-        
-        ms_client = MicroshareClient(config)
-        eh_client = EventHubClient(config)
-        
-        # Use dedicated state table for occupancy sensors
-        state_mgr = StateManagerAzure(config, table_name='occupancysensorstate')
-        
-        last_fetch_time = state_mgr.get_last_fetch_time()
-        current_time = datetime.utcnow()
-        
-        logging.info(f"Fetching occupancy sensor data since {last_fetch_time}")
-        
-        snapshots = ms_client.get_snapshots_in_range(
-            from_time=last_fetch_time,
-            to_time=current_time
-        )
-        
-        logging.info(f"Retrieved {len(snapshots)} occupancy sensor records")
-        
-        if snapshots:
-            sent_count = eh_client.send_batch(snapshots)
-            logging.info(f"Sent {sent_count} occupancy events to Event Hub")
-            
-            state_mgr.update_state(
-                last_fetch_time=current_time,
-                snapshots_sent=sent_count
-            )
-        
-        logging.info("Occupancy Sensor Forwarder - SUCCESS")
-        
-    except Exception as e:
-        logging.error(f"Occupancy Sensor Forwarder FAILED: {e}")
         logging.exception("Exception details:")
         raise

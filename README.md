@@ -8,6 +8,9 @@ This Azure Function enables Microshare™ customers to securely and reliably ret
 - **Microshare™ API integration**: Authenticates using JWT tokens over TLS 1.3.
 - **Serverless execution**: Runs on Azure Functions (Python 3.11) with no VMs or containers to manage.
 - **Multiple data types**: Run multiple independent functions for different Microshare recTypes (people counter, occupancy sensors, hourly snapshots).
+- **Full 24-hour coverage**: Dashboard views provide comprehensive data coverage with minimal gaps.
+- **Identity filtering**: Filter data by organization identity to isolate specific tenant data.
+- **Dynamic location discovery**: Automatically discovers and queries locations based on identity filter.
 - **Automatic scheduling**: Each function runs on its own timer trigger (hourly, 15-min, 5-min, or custom).
 - **Independent state tracking**: Each data type uses its own Azure Table for state isolation.
 - **Deduplication**: Ensures only new snapshots are forwarded to Event Hub.
@@ -124,14 +127,22 @@ See [DEPLOYMENT.md](DEPLOYMENT.md#running-multiple-data-sources-simultaneously) 
 
 ### Environment Variables
 
-| Variable | Description |
-| --- | --- |
-| `MICROSHARE_USERNAME` | Microshare API username |
-| `MICROSHARE_PASSWORD` | Microshare API password |
-| `MICROSHARE_API_KEY` | Microshare API key (JWT) |
-| `MICROSHARE_DATA_CONTEXT` | Data context filter |
-| `EVENT_HUB_CONNECTION_STRING` | Event Hub connection string including `EntityPath` |
-| `LOG_LEVEL` | Logging level (INFO/DEBUG) |
+| Variable | Description | Example |
+| --- | --- | --- |
+| `MICROSHARE_USERNAME` | Microshare API username | `api_user@company.com` |
+| `MICROSHARE_PASSWORD` | Microshare API password | `SecurePassword123!` |
+| `MICROSHARE_API_KEY` | Microshare API key (JWT) | `ABC123-DEF456-...` |
+| `MICROSHARE_IDENTITY` | Organization identity filter (substring match) | `ACME` matches `com.company.ACME` |
+| `MICROSHARE_PC_DISCOVERY_VIEW_ID` | People counter discovery view ID | `abc123...` |
+| `MICROSHARE_PC_DASHBOARD_VIEW_ID` | People counter dashboard view ID | `def456...` |
+| `MICROSHARE_PC_DATA_CONTEXT` | People counter data context | `["people"]` |
+| `MICROSHARE_SNAPSHOT_DASHBOARD_VIEW_ID` | Snapshot dashboard view ID | `ghi789...` |
+| `MICROSHARE_SNAPSHOT_DATA_CONTEXT` | Snapshot data context | `["context1","context2","context3"]` |
+| `MICROSHARE_SNAPSHOT_CATEGORY` | Snapshot category filter | `space` |
+| `MICROSHARE_SNAPSHOT_METRIC` | Snapshot metric filter | `occupancy` |
+| `MICROSHARE_LOCATION_PREFIX` | Location name prefix to remove for snapshots | `COMPANY` removes "COMPANY " prefix |
+| `EVENT_HUB_CONNECTION_STRING` | Event Hub connection string including `EntityPath` | `Endpoint=sb://...;EntityPath=...` |
+| `LOG_LEVEL` | Logging level (INFO/DEBUG) | `INFO` |
 
 ## Monitoring
 

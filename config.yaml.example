@@ -1,75 +1,49 @@
-# Microshare to Event Hub Forwarder Configuration
-# Example configuration showing different recType options
+# Microshare to Azure Event Hub Forwarder Configuration
 
-# ============================================================================
-# CONFIGURATION PROFILES
-# Uncomment the profile that matches your data source
-# ============================================================================
-
-# PROFILE 1: Hourly Snapshot Data (default)
-# Use this for aggregated hourly occupancy snapshots
 microshare:
+  # Credentials (from environment variables)
   username: ${MICROSHARE_USERNAME}
   password: ${MICROSHARE_PASSWORD}
   api_key: ${MICROSHARE_API_KEY}
-  
-  # View-based aggregation settings
-  view_id: "YOUR_VIEW_ID_HERE"  # Get from Microshare support
-  rec_type: "io.microshare.lake.snapshot.hourly"
-  data_context: '["${MICROSHARE_DATA_CONTEXT}","occupancy","room"]'
-  
-  # Query parameters
-  category: "space"
-  metric: "occupancy"
-  owner_org: '"[a-zA-Z]"'
-  location: "Building-A"  # Optional: filter by location
 
-# PROFILE 2: People Counter Aggregated Events
-# Use this for 15-minute aggregated people counting data
-# microshare:
-#   username: ${MICROSHARE_USERNAME}
-#   password: ${MICROSHARE_PASSWORD}
-#   api_key: ${MICROSHARE_API_KEY}
-#   
-#   view_id: "YOUR_VIEW_ID_HERE"
-#   rec_type: "io.microshare.peoplecounter.unpacked.event.agg"
-#   data_context: '["people"]'
-#   
-#   # Optional filters
-#   location: "Main-Campus"
+  # Identity filter (filters by owner.org field)
+  # Example: "ACME" matches "com.company.ACME"
+  identity: ${MICROSHARE_IDENTITY}
 
-# PROFILE 3: Occupancy Motion Sensors
-# Use this for real-time occupancy sensor data
-# microshare:
-#   username: ${MICROSHARE_USERNAME}
-#   password: ${MICROSHARE_PASSWORD}
-#   api_key: ${MICROSHARE_API_KEY}
-#   
-#   view_id: "YOUR_VIEW_ID_HERE"
-#   rec_type: "io.microshare.occupancy.unpacked"
-#   data_context: '["room","motion"]'
-#   
-#   # Optional filters
-#   location: "Office-Building-1"
+  # People Counter View IDs
+  people_counter:
+    discovery_view_id: ${MICROSHARE_PC_DISCOVERY_VIEW_ID}  # View for location discovery (has owner.org)
+    dashboard_view_id: ${MICROSHARE_PC_DASHBOARD_VIEW_ID}  # Dashboard view for full 24h coverage
+    data_context: ${MICROSHARE_PC_DATA_CONTEXT}  # e.g., '["people"]'
+    rec_type: "io.microshare.peoplecounter.unpacked.event.agg"
 
-# ============================================================================
-# EVENT HUB CONFIGURATION
-# ============================================================================
+  # Snapshot View IDs
+  snapshot:
+    dashboard_view_id: ${MICROSHARE_SNAPSHOT_DASHBOARD_VIEW_ID}  # Dashboard view for hourly snapshots
+    data_context: ${MICROSHARE_SNAPSHOT_DATA_CONTEXT}  # e.g., '["context1","context2","context3"]'
+    rec_type: "io.microshare.lake.snapshot.hourly"
+    category: ${MICROSHARE_SNAPSHOT_CATEGORY}  # e.g., "space"
+    metric: ${MICROSHARE_SNAPSHOT_METRIC}  # e.g., "occupancy"
+    owner_org: '"[a-zA-Z]"'
+
+  # Location name mapping (for snapshot queries)
+  # If people counter uses "PREFIX Location" and snapshot uses "Location", set PREFIX here
+  location_prefix: ${MICROSHARE_LOCATION_PREFIX}  # e.g., "COMPANY" removes "COMPANY " prefix
+
 event_hub:
+  # Azure Event Hub connection (from environment variable)
   connection_string: ${EVENT_HUB_CONNECTION_STRING}
   batch_size: 100
   send_timeout_seconds: 30
   max_retries: 3
 
-# ============================================================================
-# SERVICE SETTINGS
-# ============================================================================
+# Application settings
 service:
-  poll_interval_minutes: 60  # How often to fetch data
+  poll_interval_minutes: 60  # How often to fetch (hourly default)
   lookback_window_hours: 1    # Fetch data from last N hours
 
-# State management (Azure Table Storage)
-state_file: "/var/lib/microshare-forwarder/state.json"  # Not used in Azure Functions
+# State management (not used in Azure Functions - kept for compatibility)
+state_file: "/var/lib/microshare-forwarder/state.json"
 
 # Logging
 logging:

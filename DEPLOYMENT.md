@@ -193,8 +193,7 @@ Contact Microshare support to determine:
 
 1. **Which recType** contains your data:
    - `io.microshare.lake.snapshot.hourly` - Hourly occupancy snapshots
-   - `io.microshare.peoplecounter.unpacked.event.agg` - 15-min people counting
-   - `io.microshare.occupancy.unpacked` - Motion sensor data
+   - `io.microshare.peoplecounter.unpacked.event.agg` - 15-min people counting events
 
 2. **Your View ID** - Required for all queries (e.g., `661eabafa0a03557a44bdd6c`)
 
@@ -234,10 +233,11 @@ az functionapp config appsettings set \
   --name microshare-forwarder-func \
   --resource-group rg-eh-playground \
   --settings \
-    MICROSHARE_VIEW_ID="your-view-id" \
-    MICROSHARE_REC_TYPE="io.microshare.occupancy.unpacked" \
+    MICROSHARE_VIEW_ID="your-hourly-snapshot-view-id" \
     MICROSHARE_DATA_CONTEXT="YourCompany"
 ```
+
+Note: `MICROSHARE_REC_TYPE` is set in `config.yaml` per function, not as an environment variable.
 
 ### Step 3: Test Your Configuration
 
@@ -283,13 +283,7 @@ MICROSHARE_REC_TYPE="io.microshare.peoplecounter.unpacked.event.agg"
 MICROSHARE_DATA_CONTEXT="["people"]"
 ```
 
-#### Configuration 3: Motion Sensors
-
-```bash
-MICROSHARE_REC_TYPE="io.microshare.occupancy.unpacked"
-MICROSHARE_DATA_CONTEXT="["room","motion"]"
-```
-
+Note: These recType values are set in `config.yaml` and overridden in function code, not typically as env vars.
 
 ## Running Multiple Data Sources Simultaneously
 
@@ -297,22 +291,19 @@ The function app supports running multiple Microshare data types (recTypes) simu
 
 ### Multi-Function Architecture
 
-The `function_app.py` includes three independent functions:
+The `function_app.py` includes two independent functions:
 
 1. **hourly_snapshot_forwarder** - Hourly occupancy snapshots
    - recType: `io.microshare.lake.snapshot.hourly`
    - Schedule: Every hour at :00 (`0 0 * * * *`)
    - State table: `snapshotstate`
+   - View ID: Hourly snapshot view (from config.yaml)
 
-2. **people_counter_forwarder** - 15-minute people counter aggregates  
+2. **people_counter_forwarder** - 15-minute people counter aggregates
    - recType: `io.microshare.peoplecounter.unpacked.event.agg`
    - Schedule: Every 15 minutes (`0 */15 * * * *`)
    - State table: `peoplecounterstate`
-
-3. **occupancy_sensor_forwarder** - Real-time motion sensor data
-   - recType: `io.microshare.occupancy.unpacked`
-   - Schedule: Every 5 minutes (`0 */5 * * * *`)
-   - State table: `occupancysensorstate`
+   - View ID: `661eabafa0a03557a44bdd6c` (hardcoded in function)
 
 ### Key Benefits
 
@@ -322,37 +313,6 @@ The `function_app.py` includes three independent functions:
 - **Single deployment** - All functions deployed together (~$3/month total)
 - **Easy monitoring** - Single Application Insights for all functions
 
-### Enabling/Disabling Functions
-
-By default, all three functions are active. To run **only the functions you need**, comment out unwanted functions in `function_app.py`:
-
-#### Example: Run Only Hourly Snapshots
-
-Edit `function_app.py` and comment out the functions you don't need:
-
-```python
-# KEEP: Hourly snapshots
-@app.timer_trigger(schedule="0 0 * * * *", ...)
-def hourly_snapshot_forwarder(mytimer):
-    # ...function code...
-
-# COMMENT OUT: People counter (not needed for this deployment)
-# @app.timer_trigger(schedule="0 */15 * * * *", ...)
-# def people_counter_forwarder(mytimer):
-#     # ...function code...
-
-# COMMENT OUT: Occupancy sensors (not needed for this deployment)
-# @app.timer_trigger(schedule="0 */5 * * * *", ...)
-# def occupancy_sensor_forwarder(mytimer):
-#     # ...function code...
-```
-
-Redeploy after making changes:
-
-```bash
-func azure functionapp publish microshare-forwarder-func
-```
-
 ### State Isolation
 
 Each function uses a dedicated Azure Table to track its own state independently:
@@ -361,7 +321,6 @@ Each function uses a dedicated Azure Table to track its own state independently:
 |----------|------------|---------|
 | `hourly_snapshot_forwarder` | `snapshotstate` | Track hourly snapshot fetch times |
 | `people_counter_forwarder` | `peoplecounterstate` | Track people counter fetch times |
-| `occupancy_sensor_forwarder` | `occupancysensorstate` | Track occupancy sensor fetch times |
 
 Tables are **automatically created** on first execution in the same storage account (`AzureWebJobsStorage`).
 
