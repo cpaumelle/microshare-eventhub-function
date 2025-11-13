@@ -117,7 +117,7 @@ def hourly_snapshot_forwarder(mytimer: func.TimerRequest) -> None:
         logging.info(f"Retrieved {len(snapshots)} snapshot entries (full 24h coverage)")
 
         if snapshots:
-            sent_count = eh_client.send_batch(snapshots)
+            sent_count = eh_client.send_events_batch(snapshots)
             logging.info(f"Sent {sent_count} snapshots to Event Hub")
 
             update_state_unified(
@@ -185,7 +185,7 @@ def people_counter_forwarder(mytimer: func.TimerRequest) -> None:
         logging.info(f"Retrieved {len(events)} people counter events (full 24h coverage)")
 
         if events:
-            sent_count = eh_client.send_batch(events)
+            sent_count = eh_client.send_events_batch(events)
             logging.info(f"Sent {sent_count} people counter events to Event Hub")
 
             update_state_unified(
