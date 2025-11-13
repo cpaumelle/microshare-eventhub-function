@@ -7,6 +7,7 @@ Provides a singleton Config object for application-wide access.
 
 import os
 import re
+import json
 from typing import Any, Dict, List
 import yaml
 from dotenv import load_dotenv
@@ -124,8 +125,25 @@ class Config:
                         f"Environment variable '{var_name}' not found. "
                         f"Please set it in your .env file or environment."
                     )
+
+                # If the value looks like JSON (starts with [ or {), try to parse it
+                if value and (value.strip().startswith('[') or value.strip().startswith('{')):
+                    try:
+                        return json.loads(value)
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails, return as string
+                        return value
+
                 return value
 
+            # Check if entire string is just a single variable substitution
+            # If so, return the parsed value directly (could be list, dict, etc.)
+            if obj.strip() == '${' + obj.strip()[2:-1] + '}':
+                match = re.match(pattern, obj.strip())
+                if match:
+                    return replace_var(match)
+
+            # Otherwise do string substitution
             return re.sub(pattern, replace_var, obj)
         else:
             return obj

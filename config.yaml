@@ -30,7 +30,13 @@ microshare:
 
 event_hub:
   # Azure Event Hub connection (from environment variable)
+  # For single hub, use connection_string
   connection_string: ${EVENT_HUB_CONNECTION_STRING}
+
+  # For multiple hubs (sends to ALL hubs simultaneously), use connection_strings array
+  # Example: Send to both test hub AND production hub
+  connection_strings: ${EVENT_HUB_CONNECTION_STRINGS}
+
   batch_size: 100
   send_timeout_seconds: 30
   max_retries: 3
