@@ -290,20 +290,168 @@ MICROSHARE_REC_TYPE="io.microshare.occupancy.unpacked"
 MICROSHARE_DATA_CONTEXT="["room","motion"]"
 ```
 
-### Switching Between recTypes
 
-To switch data sources after deployment:
+## Running Multiple Data Sources Simultaneously
+
+The function app supports running multiple Microshare data types (recTypes) simultaneously using **multiple timer-triggered functions** in the same deployment.
+
+### Multi-Function Architecture
+
+The `function_app.py` includes three independent functions:
+
+1. **hourly_snapshot_forwarder** - Hourly occupancy snapshots
+   - recType: `io.microshare.lake.snapshot.hourly`
+   - Schedule: Every hour at :00 (`0 0 * * * *`)
+   - State table: `snapshotstate`
+
+2. **people_counter_forwarder** - 15-minute people counter aggregates  
+   - recType: `io.microshare.peoplecounter.unpacked.event.agg`
+   - Schedule: Every 15 minutes (`0 */15 * * * *`)
+   - State table: `peoplecounterstate`
+
+3. **occupancy_sensor_forwarder** - Real-time motion sensor data
+   - recType: `io.microshare.occupancy.unpacked`
+   - Schedule: Every 5 minutes (`0 */5 * * * *`)
+   - State table: `occupancysensorstate`
+
+### Key Benefits
+
+- **Independent schedules** - Each function runs on its own schedule
+- **Isolated failures** - If one function fails, others continue unaffected
+- **Separate state tracking** - Each uses its own Azure Table for state
+- **Single deployment** - All functions deployed together (~$3/month total)
+- **Easy monitoring** - Single Application Insights for all functions
+
+### Enabling/Disabling Functions
+
+By default, all three functions are active. To run **only the functions you need**, comment out unwanted functions in `function_app.py`:
+
+#### Example: Run Only Hourly Snapshots
+
+Edit `function_app.py` and comment out the functions you don't need:
+
+```python
+# KEEP: Hourly snapshots
+@app.timer_trigger(schedule="0 0 * * * *", ...)
+def hourly_snapshot_forwarder(mytimer):
+    # ...function code...
+
+# COMMENT OUT: People counter (not needed for this deployment)
+# @app.timer_trigger(schedule="0 */15 * * * *", ...)
+# def people_counter_forwarder(mytimer):
+#     # ...function code...
+
+# COMMENT OUT: Occupancy sensors (not needed for this deployment)
+# @app.timer_trigger(schedule="0 */5 * * * *", ...)
+# def occupancy_sensor_forwarder(mytimer):
+#     # ...function code...
+```
+
+Redeploy after making changes:
 
 ```bash
-# Update the recType setting
-az functionapp config appsettings set \
+func azure functionapp publish microshare-forwarder-func
+```
+
+### State Isolation
+
+Each function uses a dedicated Azure Table to track its own state independently:
+
+| Function | Table Name | Purpose |
+|----------|------------|---------|
+| `hourly_snapshot_forwarder` | `snapshotstate` | Track hourly snapshot fetch times |
+| `people_counter_forwarder` | `peoplecounterstate` | Track people counter fetch times |
+| `occupancy_sensor_forwarder` | `occupancysensorstate` | Track occupancy sensor fetch times |
+
+Tables are **automatically created** on first execution in the same storage account (`AzureWebJobsStorage`).
+
+**IMPORTANT:** Each function must use a unique `table_name` to prevent state conflicts:
+
+```python
+# Each function specifies its own table
+state_mgr = StateManagerAzure(config, table_name='peoplecounterstate')
+```
+
+### Monitoring Multiple Functions
+
+#### Azure Portal
+
+Navigate to: **Function App → microshare-forwarder-func → Functions**
+
+All active functions appear with:
+- Independent execution history
+- Separate success/failure metrics  
+- Individual invocation logs
+
+Click each function to view detailed metrics and logs.
+
+#### Application Insights Queries
+
+Filter logs for a specific function:
+
+```kusto
+traces
+| where timestamp > ago(24h)
+| where message contains "People Counter Forwarder"
+| project timestamp, message, severityLevel
+| order by timestamp desc
+```
+
+View all forwarder functions:
+
+```kusto
+traces
+| where timestamp > ago(24h)
+| where message contains "Forwarder"
+| project timestamp, message, severityLevel
+| order by timestamp desc
+```
+
+### Troubleshooting Multi-Function Setup
+
+#### Functions Overwriting Each Other's State
+
+**Symptom:** Functions show unexpected "last fetch time" or skip/duplicate data
+
+**Cause:** Multiple functions using the same state table name
+
+**Solution:** Verify each function specifies a unique `table_name`:
+
+```python
+# ✅ CORRECT - Each function has unique table
+state_mgr = StateManagerAzure(config, table_name='snapshotstate')
+state_mgr = StateManagerAzure(config, table_name='peoplecounterstate')
+
+# ❌ WRONG - Both use default table (conflict!)
+state_mgr = StateManagerAzure(config)  # Both functions would share state
+```
+
+#### Function Not Executing
+
+Verify all functions are deployed:
+
+```bash
+az functionapp function list \
   --name microshare-forwarder-func \
   --resource-group rg-eh-playground \
-  --settings MICROSHARE_REC_TYPE="io.microshare.occupancy.unpacked"
-
-# Function will automatically use new recType on next execution
-# No code redeployment needed!
+  --query "[].{Name:name}" \
+  --output table
 ```
+
+Expected output should list all active functions.
+
+### Cost Considerations
+
+Running multiple functions increases execution count but remains cost-effective:
+
+**Monthly execution estimates (Consumption plan):**
+- 1 function (hourly): ~720 executions/month
+- + People counter (15-min): ~2,880 executions/month
+- + Occupancy sensors (5-min): ~8,640 executions/month
+- **Total: ~12,240 executions/month = $3-5/month**
+
+Consumption plan includes 1 million free executions/month, so you stay well within free tier.
+
 
 
 ## Troubleshooting

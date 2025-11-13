@@ -7,8 +7,9 @@ This Azure Function enables Microshare™ customers to securely and reliably ret
 - **Outbound-only communication**: The function initiates all HTTPS requests; no inbound ports or public endpoints are used.
 - **Microshare™ API integration**: Authenticates using JWT tokens over TLS 1.3.
 - **Serverless execution**: Runs on Azure Functions (Python 3.11) with no VMs or containers to manage.
-- **Automatic scheduling**: Executes on an hourly timer trigger (configurable).
-- **State tracking**: Uses Azure Table Storage to store the last successful fetch timestamp.
+- **Multiple data types**: Run multiple independent functions for different Microshare recTypes (people counter, occupancy sensors, hourly snapshots).
+- **Automatic scheduling**: Each function runs on its own timer trigger (hourly, 15-min, 5-min, or custom).
+- **Independent state tracking**: Each data type uses its own Azure Table for state isolation.
 - **Deduplication**: Ensures only new snapshots are forwarded to Event Hub.
 - **Azure-native logging**: Application Insights provides full execution logs, metrics, and telemetry.
 - **Encrypted configuration**: All secrets stored as Azure Function App settings, encrypted at rest.
@@ -111,9 +112,15 @@ az functionapp config appsettings set   --name <function-name>   --resource-grou
 
 ### Schedule
 
-Default schedule: hourly (`0 0 * * * *`)
+The function app includes three independent timer-triggered functions:
 
-Configurable in `function_app.py`.
+- **Hourly snapshots**: `0 0 * * * *` (every hour)
+- **People counter**: `0 */15 * * * *` (every 15 minutes)
+- **Occupancy sensors**: `0 */5 * * * *` (every 5 minutes)
+
+Each schedule is configurable in `function_app.py`. Comment out unwanted functions to disable them.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md#running-multiple-data-sources-simultaneously) for details on managing multiple functions.
 
 ### Environment Variables
 

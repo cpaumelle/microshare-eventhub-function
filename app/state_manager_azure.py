@@ -23,16 +23,19 @@ class StateManagerAzure:
     - last_run_timestamp: When the function last ran
     """
 
-    TABLE_NAME = "microshareforwarderstate"
+    DEFAULT_TABLE_NAME = "microshareforwarderstate"
     PARTITION_KEY = "forwarder"
     ROW_KEY = "state"
 
-    def __init__(self, config):
+    def __init__(self, config, table_name: Optional[str] = None):
         """
         Initialize state manager with Azure Table Storage.
 
         Args:
             config: Configuration object (not used, kept for compatibility)
+            table_name: Optional custom table name for multi-function deployments.
+                       Each function should use a unique table name to avoid conflicts.
+                       Defaults to 'microshareforwarderstate'
         """
         # Get connection string from environment
         connection_string = os.environ.get('AzureWebJobsStorage')
@@ -43,23 +46,26 @@ class StateManagerAzure:
                 "This is automatically provided by Azure Functions runtime."
             )
 
+        # Use custom table name if provided, otherwise use default
+        self.table_name = table_name or self.DEFAULT_TABLE_NAME
+
         # Initialize Table Service Client
         self.table_service = TableServiceClient.from_connection_string(connection_string)
-        self.table_client = self.table_service.get_table_client(self.TABLE_NAME)
+        self.table_client = self.table_service.get_table_client(self.table_name)
 
         # Ensure table exists
         self._ensure_table_exists()
 
-        logger.info(f"StateManagerAzure initialized with table: {self.TABLE_NAME}")
+        logger.info(f"StateManagerAzure initialized with table: {self.table_name}")
 
     def _ensure_table_exists(self):
         """Create table if it doesn't exist"""
         try:
-            self.table_service.create_table(self.TABLE_NAME)
-            logger.info(f"Created new table: {self.TABLE_NAME}")
+            self.table_service.create_table(self.table_name)
+            logger.info(f"Created new table: {self.table_name}")
         except Exception as e:
             # Table likely already exists
-            logger.debug(f"Table {self.TABLE_NAME} already exists or error: {e}")
+            logger.debug(f"Table {self.table_name} already exists or error: {e}")
 
     def get_last_fetch_time(self) -> datetime:
         """
