@@ -9,9 +9,9 @@ microshare:
   # Identity filter (filters by owner.org field)
   identity: ${MICROSHARE_IDENTITY}
 
-  # People Counter View IDs
+  # People Counter Configuration
   people_counter:
-    discovery_view_id: ${MICROSHARE_PC_DISCOVERY_VIEW_ID}  # View for location discovery (has owner.org)
+    device_cluster_id: ${MICROSHARE_PC_DEVICE_CLUSTER_ID}  # Device cluster ID for location discovery
     dashboard_view_id: ${MICROSHARE_PC_DASHBOARD_VIEW_ID}  # Dashboard view for full 24h coverage
     data_context: ${MICROSHARE_PC_DATA_CONTEXT}  # e.g., '["people"]'
     rec_type: "io.microshare.peoplecounter.unpacked.event.agg"

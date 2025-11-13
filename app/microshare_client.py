@@ -208,7 +208,91 @@ class MicroshareClient:
         except Exception as e:
             logger.error(f"Token extraction failed: {e}")
             raise MicroshareAuthError(f"Failed to extract token from JWT: {e}")
-    
+
+    def discover_locations(self, rec_type: str, identity_filter: Optional[str] = None) -> List[str]:
+        """
+        Discover locations by querying the Device Cluster API.
+
+        This method uses the Device Cluster API to enumerate all devices
+        and extract their locations. It filters by identity (owner.org)
+        if an identity_filter is provided.
+
+        Args:
+            rec_type: Record type (e.g., 'io.microshare.peoplecounter.packed')
+            identity_filter: Optional identity filter to match against owner.org
+
+        Returns:
+            List of unique location names (building names from device metadata)
+
+        Raises:
+            MicroshareAPIError: If the API request fails
+        """
+        token = self._get_token()
+        ms_config = self.config.get('microshare', {})
+
+        # Get device cluster ID from config
+        pc_config = ms_config.get('people_counter', {})
+        cluster_id = pc_config.get('device_cluster_id')
+
+        if not cluster_id:
+            raise ValueError("Device cluster ID not configured (people_counter.device_cluster_id)")
+
+        # Construct Device API URL
+        url = f"https://api.microshare.io/device/{rec_type}/{cluster_id}"
+        params = {"details": "true"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        logger.info(f"Discovering locations via Device Cluster API: {rec_type}/{cluster_id}")
+
+        try:
+            response = self.session.get(url, params=params, headers=headers, timeout=30)
+            response.raise_for_status()
+
+            cluster_data = response.json()
+            objs = cluster_data.get('objs', [])
+
+            if not objs:
+                logger.warning("Device cluster returned no objects")
+                return []
+
+            # Check owner/identity filter first
+            cluster_obj = objs[0]
+            owner_org = cluster_obj.get('owner', {}).get('org', '')
+
+            if identity_filter and identity_filter.upper() not in owner_org.upper():
+                logger.warning(
+                    f"Device cluster owner '{owner_org}' does not match identity filter '{identity_filter}'"
+                )
+                return []
+
+            logger.info(f"Device cluster owner: {owner_org} (matches filter: {identity_filter})")
+
+            # Extract unique locations from devices
+            locations = set()
+            devices = cluster_obj.get('data', {}).get('devices', [])
+
+            for device in devices:
+                device_id = device.get('id', 'unknown')
+                location_array = device.get('meta', {}).get('location', [])
+
+                if location_array:
+                    # Use first element (building name) as loc1 parameter
+                    building = location_array[0]
+                    locations.add(building)
+                    logger.debug(f"  Device {device_id}: {' > '.join(location_array)} → loc1={building}")
+
+            location_list = sorted(locations)
+            logger.info(f"Discovered {len(location_list)} unique location(s): {location_list}")
+
+            return location_list
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to discover locations via Device Cluster API: {e}")
+            raise MicroshareAPIError(f"Failed to discover locations: {e}")
+
     def get_snapshots_in_range(
         self,
         from_time: datetime,
@@ -362,10 +446,9 @@ class MicroshareClient:
         Get full 24-hour people counter data with identity filtering.
 
         Strategy:
-        1. Query first view (fast, limited coverage) to discover locations
-        2. Filter by identity (owner.org)
-        3. Query dashboard view per location for full 24h coverage
-        4. Flatten line[] arrays into individual events
+        1. Query Device Cluster API to discover locations (filtered by owner.org)
+        2. Query dashboard view per location for full 24h coverage
+        3. Flatten line[] arrays into individual events
 
         Args:
             from_time: Start time (inclusive)
@@ -380,27 +463,12 @@ class MicroshareClient:
 
         logger.info(f"Getting full people counter coverage with identity filter: {identity_filter}")
 
-        # Step 1: Query first view to discover locations
+        # Format timestamps for API
         from_str = from_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         to_str = to_time.strftime("%Y-%m-%dT%H:%M:%S.999Z")
 
         # Get people counter config
         pc_config = ms_config.get('people_counter', {})
-
-        discovery_params = {
-            "id": pc_config.get('discovery_view_id'),
-            "recType": pc_config.get('rec_type', 'io.microshare.peoplecounter.unpacked.event.agg'),
-            "from": from_str,
-            "to": to_str,
-            "pageSize": 999,
-            "dataContext": pc_config.get('data_context', '["people"]'),
-            "field1": "daily_total",
-            "field2": "meta",
-            "field3": "change",
-            "field4": "field4",
-            "field5": "field5",
-            "field6": "field6"
-        }
 
         headers = {
             "Authorization": f"Bearer {token}",
@@ -408,40 +476,20 @@ class MicroshareClient:
         }
 
         try:
-            response = self.session.get(
-                "https://api.microshare.io/share/io.microshare.fm.master.agg/",
-                params=discovery_params,
-                headers=headers,
-                timeout=30
-            )
-            response.raise_for_status()
+            # Step 1: Discover locations via Device Cluster API
+            rec_type_packed = 'io.microshare.peoplecounter.packed'
+            locations_for_identity = self.discover_locations(rec_type_packed, identity_filter)
 
-            discovery_records = response.json().get('objs', [])
-            logger.info(f"Discovery query returned {len(discovery_records)} records")
+            if not locations_for_identity:
+                logger.warning("No locations discovered for the given identity filter")
+                return []
 
-            # Step 2: Filter by identity and extract unique locations
-            locations_for_identity = set()
-            for record in discovery_records:
-                try:
-                    owner_org = record['data']['owner']['org']
+            logger.info(f"Discovered {len(locations_for_identity)} location(s) for identity '{identity_filter}': {locations_for_identity}")
 
-                    # Check if identity filter matches (case-insensitive substring match)
-                    if identity_filter and identity_filter.upper() not in owner_org.upper():
-                        continue
-
-                    # Extract location from meta.device
-                    location = record['data']['data']['meta']['device'][0]
-                    locations_for_identity.add(location)
-
-                except (KeyError, TypeError, IndexError):
-                    continue
-
-            logger.info(f"Found {len(locations_for_identity)} unique locations for identity '{identity_filter}': {sorted(locations_for_identity)}")
-
-            # Step 3: Query dashboard view for each location
+            # Step 2: Query dashboard view for each location
             all_events = []
 
-            for location in sorted(locations_for_identity):
+            for location in locations_for_identity:
                 logger.info(f"Querying dashboard view for location: {location}")
 
                 dashboard_params = {
@@ -469,7 +517,7 @@ class MicroshareClient:
 
                 dashboard_records = dashboard_response.json().get('objs', [])
 
-                # Step 4: Flatten line[] arrays
+                # Step 3: Flatten line[] arrays
                 for dr in dashboard_records:
                     line_entries = dr.get('data', {}).get('line', [])
 
@@ -497,7 +545,7 @@ class MicroshareClient:
         Get full 24-hour snapshot data with identity filtering.
 
         Strategy:
-        1. Query people counter discovery view to find locations for identity
+        1. Query Device Cluster API to discover locations (filtered by owner.org)
         2. Map location names (removes configured prefix from people counter location names)
         3. Query snapshot dashboard view per mapped location for full 24h coverage
         4. Flatten line[] arrays into individual snapshot entries
@@ -515,27 +563,9 @@ class MicroshareClient:
 
         logger.info(f"Getting full snapshot coverage with identity filter: {identity_filter}")
 
-        # Step 1: Query people counter discovery view to find locations for identity
+        # Format timestamps for API
         from_str = from_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         to_str = to_time.strftime("%Y-%m-%dT%H:%M:%S.999Z")
-
-        # Get people counter config for discovery (snapshot dashboard lacks owner.org)
-        pc_config = ms_config.get('people_counter', {})
-
-        discovery_params = {
-            "id": pc_config.get('discovery_view_id'),
-            "recType": pc_config.get('rec_type', 'io.microshare.peoplecounter.unpacked.event.agg'),
-            "from": from_str,
-            "to": to_str,
-            "pageSize": 999,
-            "dataContext": pc_config.get('data_context', '["people"]'),
-            "field1": "daily_total",
-            "field2": "meta",
-            "field3": "change",
-            "field4": "field4",
-            "field5": "field5",
-            "field6": "field6"
-        }
 
         headers = {
             "Authorization": f"Bearer {token}",
@@ -543,42 +573,22 @@ class MicroshareClient:
         }
 
         try:
-            response = self.session.get(
-                "https://api.microshare.io/share/io.microshare.fm.master.agg/",
-                params=discovery_params,
-                headers=headers,
-                timeout=30
-            )
-            response.raise_for_status()
+            # Step 1: Discover locations via Device Cluster API
+            rec_type_packed = 'io.microshare.peoplecounter.packed'
+            pc_locations = self.discover_locations(rec_type_packed, identity_filter)
 
-            discovery_records = response.json().get('objs', [])
-            logger.info(f"Discovery query returned {len(discovery_records)} records")
+            if not pc_locations:
+                logger.warning("No locations discovered for the given identity filter")
+                return []
 
-            # Step 2: Filter by identity and extract unique locations
-            pc_locations = set()
-            for record in discovery_records:
-                try:
-                    owner_org = record['data']['owner']['org']
+            logger.info(f"Discovered {len(pc_locations)} location(s) for identity '{identity_filter}': {pc_locations}")
 
-                    # Check if identity filter matches (case-insensitive substring match)
-                    if identity_filter and identity_filter.upper() not in owner_org.upper():
-                        continue
-
-                    # Extract location from meta.device
-                    location = record['data']['data']['meta']['device'][0]
-                    pc_locations.add(location)
-
-                except (KeyError, TypeError, IndexError):
-                    continue
-
-            logger.info(f"Found {len(pc_locations)} unique locations for identity '{identity_filter}': {sorted(pc_locations)}")
-
-            # Step 3: Map location names for snapshot queries
+            # Step 2: Map location names for snapshot queries
             # Example: "PREFIX Location" → "Location"
             location_prefix = ms_config.get('location_prefix', '')
             snapshot_locations = []
-            for pc_loc in sorted(pc_locations):
-                # Remove configured prefix (e.g., "COMPANY " → "")
+            for pc_loc in pc_locations:
+                # Remove configured prefix (e.g., "CBRE " → "")
                 if location_prefix:
                     snapshot_loc = pc_loc.replace(f"{location_prefix} ", "")
                 else:
@@ -587,7 +597,7 @@ class MicroshareClient:
 
             logger.info(f"Location mapping (PC → Snapshot): {snapshot_locations}")
 
-            # Step 4: Query snapshot dashboard for each mapped location
+            # Step 3: Query snapshot dashboard for each mapped location
             all_snapshots = []
 
             # Get snapshot config
@@ -624,7 +634,7 @@ class MicroshareClient:
 
                 snapshot_records = snapshot_response.json().get('objs', [])
 
-                # Step 5: Flatten line[] arrays
+                # Step 4: Flatten line[] arrays
                 for sr in snapshot_records:
                     line_entries = sr.get('data', {}).get('line', [])
 
