@@ -13,11 +13,20 @@ app = func.FunctionApp()
 def get_state_manager(config, table_name: str):
     """
     Factory function to get the appropriate state manager.
-    Uses Azure Table Storage if running in Azure Functions,
-    otherwise uses local file-based storage for VM deployment.
+    Uses Azure Table Storage if running in Azure Functions App (cloud),
+    otherwise uses local file-based storage for VM/local deployment.
     """
-    # Check if running in Azure Functions environment
-    if os.environ.get('AzureWebJobsStorage'):
+    # Check if running in real Azure Functions App environment
+    azure_storage_conn = os.environ.get('AzureWebJobsStorage', '')
+
+    # Valid Azure Storage connection strings contain these markers
+    is_valid_azure_storage = (
+        azure_storage_conn and
+        'AccountName=' in azure_storage_conn and
+        'AccountKey=' in azure_storage_conn
+    )
+
+    if is_valid_azure_storage:
         logging.info(f"Using Azure Table Storage state manager (table: {table_name})")
         return StateManagerAzure(config, table_name=table_name)
     else:
