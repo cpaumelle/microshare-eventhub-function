@@ -44,3 +44,4 @@ token_cache.json
 # OS
 .DS_Store
 Thumbs.db
+tests/eh_connstr
