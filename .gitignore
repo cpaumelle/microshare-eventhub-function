@@ -45,3 +45,6 @@ token_cache.json
 .DS_Store
 Thumbs.db
 tests/eh_connstr
+tests/
+.env.backup
+.env.cbre_api

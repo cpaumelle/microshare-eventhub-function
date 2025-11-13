@@ -50,7 +50,7 @@ This is the **development machine** where you write and deploy Azure Function co
 - Stored in `.env` (local development)
 - Same credentials on Azure VM at `/opt/occupancy-snapshot/.env`
 - Deployed as Function App Settings in Azure
-- Username: `ms_admin@cbre.com`
+- Username: `api_user@company.com`
 
 ### Common Tasks
 
@@ -122,7 +122,7 @@ Required in `.env`:
 MICROSHARE_USERNAME       # Microshare API username
 MICROSHARE_PASSWORD       # Microshare API password
 MICROSHARE_API_KEY        # Microshare API key (UUID)
-MICROSHARE_DATA_CONTEXT   # Data context (e.g., "CBRE")
+MICROSHARE_DATA_CONTEXT   # Data context (e.g., "COMPANY")
 EVENT_HUB_CONNECTION_STRING # Full connection string with EntityPath
 LOG_LEVEL                 # INFO, DEBUG, WARNING, ERROR
 ```

@@ -31,7 +31,7 @@ All API calls require authentication through the FastAPI wrapper that handles Mi
 curl -X POST "http://localhost:8000/api/v1/auth/login" \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "ms_admin@cbre.com",
+    "username": "api_user@company.com",
     "password": "fth41ZlrZM2M",
     "environment": "production"
   }'
@@ -65,7 +65,7 @@ curl -X GET \
 **Key Cluster Information:**
 - **Cluster ID:** `66e2b7a501faa80630fbb35f`
 - **Record Type:** `io.microshare.peoplecounter.packed`
-- **Name:** "2025 CBRE occupancy data | People Counting"
+- **Name:** "2025 COMPANY occupancy data | People Counting"
 - **Total Devices:** 30
 - **Location:** Eurotunnel C03 building
 
@@ -402,7 +402,7 @@ Solution: Use aggregated dashboard data or view-based queries
 # Get fresh token
 curl -X POST "http://localhost:8000/api/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"username": "ms_admin@cbre.com", "password": "fth41ZlrZM2M", "environment": "production"}'
+  -d '{"username": "api_user@company.com", "password": "fth41ZlrZM2M", "environment": "production"}'
 ```
 
 ### Data Quality Issues
@@ -473,7 +473,7 @@ def safe_api_call(url, headers, max_retries=3):
 # 1. Get authentication token
 TOKEN=$(curl -X POST "http://localhost:8000/api/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"username": "ms_admin@cbre.com", "password": "fth41ZlrZM2M", "environment": "production"}' \
+  -d '{"username": "api_user@company.com", "password": "fth41ZlrZM2M", "environment": "production"}' \
   | jq -r '.session_token' | python3 -c "import sys, jwt; print(jwt.decode(sys.stdin.read().strip(), options={'verify_signature': False})['microshare_access_token'])")
 
 # 2. Fetch people counter data
@@ -577,7 +577,7 @@ df.to_csv('people_counter_bulk_data.csv', index=False)
 
 ```bash
 # .env file
-MICROSHARE_USERNAME=ms_admin@cbre.com
+MICROSHARE_USERNAME=api_user@company.com
 MICROSHARE_PASSWORD=fth41ZlrZM2M
 MICROSHARE_AUTH_URL=https://auth.microshare.io
 MICROSHARE_API_URL=https://api.microshare.io
@@ -621,4 +621,4 @@ The methodology consistently delivers:
 - **Signal quality data** (RSSI, SNR, gateways)
 - **Temporal aggregations** (daily totals, change events)
 
-With proper authentication, error handling, and rate limiting, this approach provides reliable access to comprehensive people counter analytics for the Eurotunnel C03 deployment and other CBRE locations.
+With proper authentication, error handling, and rate limiting, this approach provides reliable access to comprehensive people counter analytics for the Eurotunnel C03 deployment and other COMPANY locations.
