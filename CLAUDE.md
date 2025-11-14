@@ -31,6 +31,9 @@ It explains:
 - **[README.md](./README.md)** - Project features, security architecture, quick start
 - **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Step-by-step deployment instructions
 - **[SECURITY.md](./SECURITY.md)** - Security architecture and threat model
+- **[COST_OPTIMIZATION_AND_MIGRATION.md](./COST_OPTIMIZATION_AND_MIGRATION.md)** - Azure cost analysis and OVH VPS migration guide
+- **[2025-11-13-1733_MONITORING_STATUS.md](./2025-11-13-1733_MONITORING_STATUS.md)** - Current monitoring status and bug tracking
+- **[2025-11-13-1730_DUAL_HUB_FIX.md](./2025-11-13-1730_DUAL_HUB_FIX.md)** - Dual Event Hub bug investigation and resolution
 
 ## Quick Reference
 
@@ -42,7 +45,9 @@ This is the **development machine** where you write and deploy Azure Function co
 
 ### Azure Resources
 - **Function App**: `microshare-forwarder-func` (UK South)
-- **Event Hub**: `ehns-playground-26767/ingress-test` (UK South)
+- **Event Hubs**:
+  - Primary (test/monitoring): `ehns-playground-26767/ingress-test` (UK South)
+  - Client (production): `occupancydata-dev-ehns/occupancydata-microshare-dev-function-eh` (UK South)
 - **Resource Group**: `rg-eh-playground`
 - **VM** (legacy): `microshare-forwarder-vm` (104.45.41.81)
 
@@ -74,6 +79,17 @@ python tests/consumer.py
 az functionapp logs tail --name microshare-forwarder-func --resource-group rg-eh-playground
 ```
 
+#### Monitor VM Runtime Logs (real-time)
+```bash
+ssh azureuser@104.45.41.81 'tail -f /tmp/func-runtime.log'
+```
+
+#### Check State Files (VM)
+```bash
+ssh azureuser@104.45.41.81 'cat /var/lib/microshare-forwarder/peoplecounterstate.json'
+ssh azureuser@104.45.41.81 'cat /var/lib/microshare-forwarder/snapshotstate.json'
+```
+
 ## Project Structure
 
 ```
@@ -102,6 +118,18 @@ The Function App runs **2 independent timer functions**:
 
 Each uses a separate Azure Table for state tracking (`snapshotstate` and `peoplecounterstate`).
 
+### Dual Event Hub Broadcasting
+The system sends data to **BOTH Event Hubs simultaneously**:
+- Primary hub: For testing and monitoring (ingress-test)
+- Client hub: For production client access (occupancydata-microshare-dev-function-eh)
+
+Configuration uses `EVENT_HUB_CONNECTION_STRING` (single) + `EVENT_HUB_CONNECTION_STRINGS` (JSON array).
+Enhanced INFO-level logging shows "MULTI-HUB BROADCASTING" messages and delivery confirmations for each hub.
+
+**Recent Issue (2025-11-13)**: JSON array parsing failure caused 48-minute downtime (16:39-17:27 UTC).
+Resolved by runtime restart. System auto-recovered missed data via state management.
+See `2025-11-13-1730_DUAL_HUB_FIX.md` for details.
+
 ### Legacy VM
 The Azure VM at `104.45.41.81` runs the **old systemd-based forwarder**. It's still operational but being phased out in favor of the Azure Function App. Don't make changes there unless explicitly asked.
 
@@ -119,18 +147,30 @@ The Azure VM at `104.45.41.81` runs the **old systemd-based forwarder**. It's st
 
 Required in `.env`:
 ```bash
-MICROSHARE_USERNAME       # Microshare API username
-MICROSHARE_PASSWORD       # Microshare API password
-MICROSHARE_API_KEY        # Microshare API key (UUID)
-MICROSHARE_DATA_CONTEXT   # Data context (e.g., "COMPANY")
-EVENT_HUB_CONNECTION_STRING # Full connection string with EntityPath
-LOG_LEVEL                 # INFO, DEBUG, WARNING, ERROR
+MICROSHARE_USERNAME              # Microshare API username
+MICROSHARE_PASSWORD              # Microshare API password
+MICROSHARE_API_KEY               # Microshare API key (UUID)
+MICROSHARE_DATA_CONTEXT          # Data context (e.g., "COMPANY")
+EVENT_HUB_CONNECTION_STRING      # Primary Event Hub connection string with EntityPath
+EVENT_HUB_CONNECTION_STRINGS     # Additional Event Hubs (JSON array format)
+                                 # Example: ["Endpoint=sb://...;EntityPath=hub2"]
+LOG_LEVEL                        # INFO, DEBUG, WARNING, ERROR
 ```
+
+**Dual Event Hub Configuration**:
+- `EVENT_HUB_CONNECTION_STRING`: Primary hub (always used)
+- `EVENT_HUB_CONNECTION_STRINGS`: JSON array of additional hubs (optional)
+- Data is sent to ALL configured hubs simultaneously
+- Config parser automatically detects and parses JSON arrays
 
 ## Git Repository
 
 - Current branch: `main`
-- Recent commits focus on multi-recType support
+- Recent commits:
+  - `c5c04c3` (2025-11-13 16:39 UTC): Enhanced logging for dual Event Hub broadcasting
+  - `e3f561b` (2025-11-13 16:20 UTC): Add dual Event Hub broadcasting support
+  - `99cafa7`: Add multi-function support for simultaneous recType processing
+  - `aaf0cad`: Add multi-recType support with anonymized examples
 - `.env` is gitignored (never commit credentials!)
 - `tests/` directory not yet tracked
 

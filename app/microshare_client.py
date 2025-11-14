@@ -492,12 +492,17 @@ class MicroshareClient:
             for location in locations_for_identity:
                 logger.info(f"Querying dashboard view for location: {location}")
 
+                # Get data_context and ensure it's a JSON string (not a list)
+                pc_data_context = pc_config.get('data_context', '["people"]')
+                if isinstance(pc_data_context, list):
+                    pc_data_context = json.dumps(pc_data_context)
+
                 dashboard_params = {
                     "id": pc_config.get('dashboard_view_id'),
                     "recType": pc_config.get('rec_type', 'io.microshare.peoplecounter.unpacked.event.agg'),
                     "from": from_str,
                     "to": to_str,
-                    "dataContext": pc_config.get('data_context', '["people"]'),
+                    "dataContext": pc_data_context,
                     "field1": "daily_total",
                     "field2": "meta",
                     "field3": "change",
@@ -588,7 +593,7 @@ class MicroshareClient:
             location_prefix = ms_config.get('location_prefix', '')
             snapshot_locations = []
             for pc_loc in pc_locations:
-                # Remove configured prefix (e.g., "CBRE " → "")
+                # Remove configured prefix (e.g., "Company " → "")
                 if location_prefix:
                     snapshot_loc = pc_loc.replace(f"{location_prefix} ", "")
                 else:
@@ -606,12 +611,17 @@ class MicroshareClient:
             for pc_loc, snapshot_loc in snapshot_locations:
                 logger.info(f"Querying snapshot dashboard for location: {snapshot_loc} (from PC: {pc_loc})")
 
+                # Get data_context and ensure it's a JSON string (not a list)
+                data_context = snapshot_config.get('data_context', '[]')
+                if isinstance(data_context, list):
+                    data_context = json.dumps(data_context)
+
                 snapshot_params = {
                     "id": snapshot_config.get('dashboard_view_id'),
                     "recType": snapshot_config.get('rec_type', 'io.microshare.lake.snapshot.hourly'),
                     "from": from_str,
                     "to": to_str,
-                    "dataContext": snapshot_config.get('data_context', '[]'),
+                    "dataContext": data_context,
                     "field1": "current",
                     "field2": "field2",
                     "field3": "field3",
