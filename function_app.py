@@ -177,34 +177,35 @@ def hourly_snapshot_forwarder(mytimer: func.TimerRequest) -> None:
 
 
 # ============================================================================
-# FUNCTION 2: People Counter Data
+# FUNCTION 2: People Counter Data - DISABLED
 # ============================================================================
 # Fetches 15-minute interval people counter event data
 # Uses view-based query method (see MICROSHARE_PEOPLE_COUNTER_QUERY_GUIDE.md)
 # Default schedule: Every 15 minutes
+# STATUS: Temporarily disabled - only using hourly snapshots
 # ============================================================================
 
-@app.timer_trigger(
-    schedule="0 */15 * * * *",  # Every 15 minutes
-    arg_name="mytimer",
-    run_on_startup=False,
-    use_monitor=False
-)
-def people_counter_forwarder(mytimer: func.TimerRequest) -> None:
-    """
-    Fetch people counter unpacked event data and forward to Azure Event Hub.
-
-    - Uses separate state tracking: 'peoplecounterstate'
-    - Data format: Flattened individual events with recType field
-    - Provides full 24h coverage with identity filtering
-    - Note: Uses different view_id and recType than snapshots
-    """
-    config = get_config()
-    run_forwarder(
-        forwarder_name="People Counter Forwarder",
-        state_table="peoplecounterstate",
-        fetch_function=lambda client, from_time, to_time:
-            client.get_people_counter_full_coverage(from_time, to_time),
-        config=config,
-        data_type_name="people counter events"
-    )
+# @app.timer_trigger(
+#     schedule="0 */15 * * * *",  # Every 15 minutes
+#     arg_name="mytimer",
+#     run_on_startup=False,
+#     use_monitor=False
+# )
+# def people_counter_forwarder(mytimer: func.TimerRequest) -> None:
+#     """
+#     Fetch people counter unpacked event data and forward to Azure Event Hub.
+#
+#     - Uses separate state tracking: 'peoplecounterstate'
+#     - Data format: Flattened individual events with recType field
+#     - Provides full 24h coverage with identity filtering
+#     - Note: Uses different view_id and recType than snapshots
+#     """
+#     config = get_config()
+#     run_forwarder(
+#         forwarder_name="People Counter Forwarder",
+#         state_table="peoplecounterstate",
+#         fetch_function=lambda client, from_time, to_time:
+#             client.get_people_counter_full_coverage(from_time, to_time),
+#         config=config,
+#         data_type_name="people counter events"
+#     )
