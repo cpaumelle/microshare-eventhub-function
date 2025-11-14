@@ -530,6 +530,8 @@ class MicroshareClient:
                     for entry in line_entries:
                         # Add metadata from parent record
                         entry['_location_tags'] = dr.get('data', {}).get('_id', {}).get('tags', [])
+                        # Add recType for client routing/processing
+                        entry['recType'] = pc_config.get('rec_type', 'io.microshare.peoplecounter.unpacked.event.agg')
                         all_events.append(entry)
 
                 logger.info(f"  → Added {len(line_entries) if dashboard_records else 0} events from {location}")
@@ -654,6 +656,8 @@ class MicroshareClient:
                         entry['_location_tags'] = sr.get('data', {}).get('_id', {}).get('tags', [])
                         entry['_location'] = snapshot_loc
                         entry['_pc_location'] = pc_loc  # Original people counter location name
+                        # Add recType for client routing/processing
+                        entry['recType'] = snapshot_config.get('rec_type', 'io.microshare.lake.snapshot.hourly')
                         all_snapshots.append(entry)
 
                 logger.info(f"  → Added {len(line_entries) if snapshot_records else 0} snapshots from {snapshot_loc}")
