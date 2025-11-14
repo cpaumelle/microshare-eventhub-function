@@ -644,25 +644,21 @@ class MicroshareClient:
                 )
                 snapshot_response.raise_for_status()
 
-                snapshot_records = snapshot_response.json().get('objs', [])
+                # Get the complete API response with meta and objs
+                full_response = snapshot_response.json()
 
-                # Step 4: Flatten line[] arrays
-                for sr in snapshot_records:
-                    line_entries = sr.get('data', {}).get('line', [])
+                # Count events for logging
+                event_count = sum(
+                    len(obj.get('data', {}).get('line', []))
+                    for obj in full_response.get('objs', [])
+                )
 
-                    # Each entry in line[] is an hourly snapshot
-                    for entry in line_entries:
-                        # Add metadata from parent record
-                        entry['_location_tags'] = sr.get('data', {}).get('_id', {}).get('tags', [])
-                        entry['_location'] = snapshot_loc
-                        entry['_pc_location'] = pc_loc  # Original people counter location name
-                        # Add recType for client routing/processing
-                        entry['recType'] = snapshot_config.get('rec_type', 'io.microshare.lake.snapshot.hourly')
-                        all_snapshots.append(entry)
+                # Add the complete response to the list (not flattened)
+                all_snapshots.append(full_response)
 
-                logger.info(f"  → Added {len(line_entries) if snapshot_records else 0} snapshots from {snapshot_loc}")
+                logger.info(f"  → Retrieved complete response with {event_count} events from {snapshot_loc}")
 
-            logger.info(f"Total snapshots retrieved: {len(all_snapshots)}")
+            logger.info(f"Total snapshot responses retrieved: {len(all_snapshots)}")
             return all_snapshots
 
         except requests.exceptions.RequestException as e:

@@ -114,11 +114,11 @@ def hourly_snapshot_forwarder(mytimer: func.TimerRequest) -> None:
             to_time=current_time
         )
 
-        logging.info(f"Retrieved {len(snapshots)} snapshot entries (full 24h coverage)")
+        logging.info(f"Retrieved {len(snapshots)} snapshot API response(s) (full 24h coverage)")
 
         if snapshots:
             sent_count = eh_client.send_events_batch(snapshots)
-            logging.info(f"Sent {sent_count} snapshots to Event Hub")
+            logging.info(f"Sent {sent_count} snapshot response(s) to Event Hub")
 
             update_state_unified(
                 state_mgr=state_mgr,
