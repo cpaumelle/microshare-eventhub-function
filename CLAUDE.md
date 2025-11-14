@@ -4,7 +4,7 @@ This file contains important context and references for Claude Code when working
 
 ## Project Overview
 
-This is an Azure Functions project that fetches data from Microshare API and forwards it to Azure Event Hub. It's a serverless replacement for a legacy VM-based systemd deployment.
+This is an Azure Functions project that fetches data from Microshare API and forwards it to Azure Event Hub. The **active production system** runs on Azure VM (`104.45.41.81`) using Azure Functions Core Tools (`func start`). The cloud Azure Function App exists but is NOT currently in production use.
 
 ## Essential Reading
 
@@ -12,19 +12,19 @@ This is an Azure Functions project that fetches data from Microshare API and for
 **This is the most important document for understanding the project architecture.**
 
 It explains:
-- What CT4111 is (development machine) vs Azure VM (legacy) vs Azure Function App (new production)
+- What CT4111 is (development machine) vs Azure VM (active production)
 - Where code lives and what each component does
 - Data flow architecture
 - Development workflow
-- State management differences
-- Migration plan from VM to serverless
+- State management (local JSON files on VM)
+- Future migration possibilities to cloud Function App
 
 **Always refer to ARCHITECTURE.md when confused about:**
-- Where to deploy code
-- What the Azure VM is for
-- How the Azure Function App works
+- Where to deploy code (answer: deploy to VM)
+- What the Azure VM does (answer: runs active production system)
+- How the Function App runtime works
 - Where credentials are stored
-- How to SSH between components
+- How to SSH to the VM
 
 ### Other Important Documents
 
@@ -32,6 +32,7 @@ It explains:
 - **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Step-by-step deployment instructions
 - **[SECURITY.md](./SECURITY.md)** - Security architecture and threat model
 - **[COST_OPTIMIZATION_AND_MIGRATION.md](./COST_OPTIMIZATION_AND_MIGRATION.md)** - Azure cost analysis and OVH VPS migration guide
+- **[2025-11-14-1200_RECTYPE_FIX_AND_CLIENT_HUB_PAUSE.md](./2025-11-14-1200_RECTYPE_FIX_AND_CLIENT_HUB_PAUSE.md)** - recType field fix and client hub pause (2025-11-14)
 - **[2025-11-13-1733_MONITORING_STATUS.md](./2025-11-13-1733_MONITORING_STATUS.md)** - Current monitoring status and bug tracking
 - **[2025-11-13-1730_DUAL_HUB_FIX.md](./2025-11-13-1730_DUAL_HUB_FIX.md)** - Dual Event Hub bug investigation and resolution
 
@@ -44,44 +45,52 @@ It explains:
 This is the **development machine** where you write and deploy Azure Function code.
 
 ### Azure Resources
-- **Function App**: `microshare-forwarder-func` (UK South)
+- **VM (ACTIVE PRODUCTION)**: `microshare-forwarder-vm` (104.45.41.81)
+  - Running: `func start --port 7072`
+  - Location: `/opt/microshare-eventhub-function/`
+  - State files: `/var/lib/microshare-forwarder/*.json`
+- **Function App** (not in use): `microshare-forwarder-func` (UK South)
 - **Event Hubs**:
   - Primary (test/monitoring): `ehns-playground-26767/ingress-test` (UK South)
   - Client (production): `occupancydata-dev-ehns/occupancydata-microshare-dev-function-eh` (UK South)
 - **Resource Group**: `rg-eh-playground`
-- **VM** (legacy): `microshare-forwarder-vm` (104.45.41.81)
 
 ### Key Credentials
-- Stored in `.env` (local development)
-- Same credentials on Azure VM at `/opt/occupancy-snapshot/.env`
-- Deployed as Function App Settings in Azure
+- Stored in `.env` (local development on CT4111)
+- Same credentials on Azure VM at `/opt/microshare-eventhub-function/.env`
+- **NOT** currently deployed as cloud Function App Settings (VM is active, not cloud)
 - Username: `api_user@company.com`
 
 ### Common Tasks
 
-#### Deploy to Azure Function App
+#### Deploy Code to Production VM
 ```bash
-func azure functionapp publish microshare-forwarder-func
+# Copy updated files to VM
+scp app/microshare_client.py azureuser@104.45.41.81:/opt/microshare-eventhub-function/app/
+# Or deploy entire app directory
+rsync -av --exclude='.env' app/ azureuser@104.45.41.81:/opt/microshare-eventhub-function/app/
+# Function runtime auto-reloads, no restart needed
 ```
 
-#### SSH to Azure VM (legacy)
+#### SSH to Production VM
 ```bash
 ssh azureuser@104.45.41.81
 ```
 
-#### Test Event Hub Consumer
+#### Test Event Hub Consumer (Local)
 ```bash
-python tests/consumer.py
+python3 consumer.py          # Read all events from beginning
+python3 consumer_latest.py   # Read only new events
 ```
 
-#### View Azure Function Logs
+#### Monitor VM Production Logs (real-time)
 ```bash
-az functionapp logs tail --name microshare-forwarder-func --resource-group rg-eh-playground
+ssh azureuser@104.45.41.81 'tail -f /tmp/func-runtime-new.log'
 ```
 
-#### Monitor VM Runtime Logs (real-time)
+#### Check VM Function Status
 ```bash
-ssh azureuser@104.45.41.81 'tail -f /tmp/func-runtime.log'
+ssh azureuser@104.45.41.81 'ps aux | grep "func start" | grep -v grep'
 ```
 
 #### Check State Files (VM)
@@ -130,18 +139,34 @@ Enhanced INFO-level logging shows "MULTI-HUB BROADCASTING" messages and delivery
 Resolved by runtime restart. System auto-recovered missed data via state management.
 See `2025-11-13-1730_DUAL_HUB_FIX.md` for details.
 
-### Legacy VM
-The Azure VM at `104.45.41.81` runs the **old systemd-based forwarder**. It's still operational but being phased out in favor of the Azure Function App. Don't make changes there unless explicitly asked.
+### Active Production System (VM)
+The Azure VM at `104.45.41.81` is the **ACTIVE PRODUCTION** system running modern Azure Functions code via `func start`.
+
+**Key Details:**
+- **NOT legacy/systemd** - runs current Azure Functions implementation
+- Location: `/opt/microshare-eventhub-function/`
+- Process: `func start --port 7072` (Azure Functions Core Tools)
+- Logs: `/tmp/func-runtime-new.log`
+- State: Local JSON files in `/var/lib/microshare-forwarder/`
+- Dual Event Hub broadcasting enabled
+- Handles both people counter (15min) and snapshots (hourly)
+
+**Important**: All production code changes should be deployed to the VM. The cloud Azure Function App exists but is NOT in active use.
 
 ### Development Workflow
-1. Edit code on CT4111
+1. Edit code on CT4111 (`/opt/projects/microshare-eventhub-function/`)
 2. Test locally (optional)
-3. Deploy to Function App: `func azure functionapp publish microshare-forwarder-func`
-4. Monitor logs in Azure Portal or via CLI
+3. **Deploy to VM**: `scp` or `rsync` files to VM `/opt/microshare-eventhub-function/`
+4. Monitor VM logs: `ssh azureuser@104.45.41.81 'tail -f /tmp/func-runtime-new.log'`
+5. Commit to git on CT4111
+
+**Note**: To deploy to cloud Function App (future), use: `func azure functionapp publish microshare-forwarder-func`
 
 ### State Management
-- **VM** (legacy): Local JSON file `/var/lib/microshare-forwarder/state.json`
-- **Function App** (new): Azure Table Storage (`snapshotstate`, `peoplecounterstate`, `occupancystate`)
+- **VM** (active production): Local JSON files
+  - `/var/lib/microshare-forwarder/peoplecounterstate.json`
+  - `/var/lib/microshare-forwarder/snapshotstate.json`
+- **Function App** (not in use): Would use Azure Table Storage if deployed to cloud
 
 ## Environment Variables
 
@@ -167,22 +192,39 @@ LOG_LEVEL                        # INFO, DEBUG, WARNING, ERROR
 
 - Current branch: `main`
 - Recent commits:
+  - `eeefd9a` (2025-11-14 12:00 UTC): **Fix missing recType field in Event Hub events** ⭐ CRITICAL FIX
   - `c5c04c3` (2025-11-13 16:39 UTC): Enhanced logging for dual Event Hub broadcasting
   - `e3f561b` (2025-11-13 16:20 UTC): Add dual Event Hub broadcasting support
   - `99cafa7`: Add multi-function support for simultaneous recType processing
   - `aaf0cad`: Add multi-recType support with anonymized examples
 - `.env` is gitignored (never commit credentials!)
-- `tests/` directory not yet tracked
+- Test files (`consumer.py`, `consumer_latest.py`) not yet tracked
 
 ## Azure CLI Context
 
 Logged in as: `cpaumelle@eroundit.eu`
 Subscription: `Azure subscription 1` (fe17f352-cebf-4eb0-b9cc-31e8a0183a2b)
 
+## Current System Status (as of 2025-11-14)
+
+**Production System**: Azure VM (`104.45.41.81`)
+- ✅ Running: `func start --port 7072`
+- ✅ People Counter: Active (every 15 min)
+- ✅ Snapshots: Active (hourly, when data available)
+- ✅ recType field: **FIXED** (commit `eeefd9a`)
+- ⏸️ Client Hub: **PAUSED for testing** (see `2025-11-14-1200_RECTYPE_FIX_AND_CLIENT_HUB_PAUSE.md`)
+  - Primary hub (ingress-test): Active
+  - Client hub (occupancydata-microshare-dev-function-eh): Paused
+  - To re-enable: Follow steps in reference document
+
 ## When in Doubt
 
-1. **Read [ARCHITECTURE.md](./ARCHITECTURE.md)** first
-2. Check if you're working on the right machine (CT4111 vs VM vs Function App)
+1. **Read [ARCHITECTURE.md](./ARCHITECTURE.md)** first (though note: it may need updating)
+2. Check if you're working on the right machine:
+   - **CT4111**: Development machine
+   - **VM (104.45.41.81)**: ACTIVE production system
+   - **Cloud Function App**: NOT in use
 3. Verify credentials in `.env` match expected format
-4. Test locally before deploying
-5. Use Azure CLI to inspect resources: `az functionapp list`, `az eventhubs eventhub list`
+4. Test locally before deploying to VM
+5. Deploy to VM, NOT to cloud Function App (unless migrating)
+6. Use Azure CLI to inspect resources: `az eventhubs eventhub list`
