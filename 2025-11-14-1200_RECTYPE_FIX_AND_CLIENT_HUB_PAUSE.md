@@ -305,12 +305,10 @@ python3 consumer.py          # All events (from beginning)
 
 ## Related Documents
 
-- `CLAUDE.md` - Updated with correct VM architecture info
 - `2025-11-13-1730_DUAL_HUB_FIX.md` - Previous dual-hub JSON parsing issue
 - `ARCHITECTURE.md` - System architecture (needs update about VM status)
 
 ---
 
 **Last Updated**: 2025-11-14 12:10 UTC
-**Author**: Claude Code
 **Verified By**: Local testing + VM execution logs

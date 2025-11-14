@@ -48,3 +48,4 @@ tests/eh_connstr
 tests/
 .env.backup
 .env.cbre_api
+CLAUDE.md
