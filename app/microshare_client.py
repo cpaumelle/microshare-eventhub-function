@@ -293,6 +293,50 @@ class MicroshareClient:
             logger.error(f"Failed to discover locations via Device Cluster API: {e}")
             raise MicroshareAPIError(f"Failed to discover locations: {e}")
 
+    def _query_dashboard_api(
+        self,
+        params: Dict[str, Any],
+        location_name: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Query the Microshare dashboard aggregation API.
+
+        This is a common helper used by both people counter and snapshot methods
+        to query the dashboard view API with different parameters.
+
+        Args:
+            params: Dashboard query parameters (id, recType, from, to, etc.)
+            location_name: Optional location name for logging purposes
+
+        Returns:
+            API response as dictionary (contains 'meta' and 'objs' keys)
+
+        Raises:
+            MicroshareAPIError: If the API request fails
+        """
+        token = self._get_token()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        url = "https://api.microshare.io/share/io.microshare.fm.master.agg/"
+
+        try:
+            response = self.session.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            loc_info = f" for location '{location_name}'" if location_name else ""
+            logger.error(f"Dashboard API query failed{loc_info}: {e}")
+            raise MicroshareAPIError(f"Dashboard API query failed{loc_info}: {e}")
+
     def get_snapshots_in_range(
         self,
         from_time: datetime,
@@ -457,23 +501,15 @@ class MicroshareClient:
         Returns:
             List of flattened people counter events with full 24h coverage
         """
-        token = self._get_token()
         ms_config = self.config.get('microshare', {})
         identity_filter = ms_config.get('identity', '')
+        pc_config = ms_config.get('people_counter', {})
 
         logger.info(f"Getting full people counter coverage with identity filter: {identity_filter}")
 
         # Format timestamps for API
         from_str = from_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         to_str = to_time.strftime("%Y-%m-%dT%H:%M:%S.999Z")
-
-        # Get people counter config
-        pc_config = ms_config.get('people_counter', {})
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
 
         try:
             # Step 1: Discover locations via Device Cluster API
@@ -497,6 +533,7 @@ class MicroshareClient:
                 if isinstance(pc_data_context, list):
                     pc_data_context = json.dumps(pc_data_context)
 
+                # Build dashboard query parameters
                 dashboard_params = {
                     "id": pc_config.get('dashboard_view_id'),
                     "recType": pc_config.get('rec_type', 'io.microshare.peoplecounter.unpacked.event.agg'),
@@ -512,15 +549,9 @@ class MicroshareClient:
                     "loc1": location
                 }
 
-                dashboard_response = self.session.get(
-                    "https://api.microshare.io/share/io.microshare.fm.master.agg/",
-                    params=dashboard_params,
-                    headers=headers,
-                    timeout=30
-                )
-                dashboard_response.raise_for_status()
-
-                dashboard_records = dashboard_response.json().get('objs', [])
+                # Query dashboard API using common helper
+                dashboard_data = self._query_dashboard_api(dashboard_params, location_name=location)
+                dashboard_records = dashboard_data.get('objs', [])
 
                 # Step 3: Flatten line[] arrays
                 for dr in dashboard_records:
@@ -564,7 +595,6 @@ class MicroshareClient:
         Returns:
             List of flattened snapshot entries with full 24h coverage
         """
-        token = self._get_token()
         ms_config = self.config.get('microshare', {})
         identity_filter = ms_config.get('identity', '')
 
@@ -573,11 +603,6 @@ class MicroshareClient:
         # Format timestamps for API
         from_str = from_time.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         to_str = to_time.strftime("%Y-%m-%dT%H:%M:%S.999Z")
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
 
         try:
             # Step 1: Discover locations via Device Cluster API
@@ -618,6 +643,7 @@ class MicroshareClient:
                 if isinstance(data_context, list):
                     data_context = json.dumps(data_context)
 
+                # Build snapshot query parameters
                 snapshot_params = {
                     "id": snapshot_config.get('dashboard_view_id'),
                     "recType": snapshot_config.get('rec_type', 'io.microshare.lake.snapshot.hourly'),
@@ -636,16 +662,8 @@ class MicroshareClient:
                     "loc1": snapshot_loc
                 }
 
-                snapshot_response = self.session.get(
-                    "https://api.microshare.io/share/io.microshare.fm.master.agg/",
-                    params=snapshot_params,
-                    headers=headers,
-                    timeout=30
-                )
-                snapshot_response.raise_for_status()
-
-                # Get the complete API response with meta and objs
-                full_response = snapshot_response.json()
+                # Query dashboard API using common helper
+                full_response = self._query_dashboard_api(snapshot_params, location_name=snapshot_loc)
 
                 # Count events for logging
                 event_count = sum(
