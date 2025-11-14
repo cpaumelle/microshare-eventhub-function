@@ -653,6 +653,9 @@ class MicroshareClient:
                     for obj in full_response.get('objs', [])
                 )
 
+                # Add recType for client routing/processing
+                full_response['recType'] = snapshot_config.get('rec_type', 'io.microshare.lake.snapshot.hourly')
+
                 # Add the complete response to the list (not flattened)
                 all_snapshots.append(full_response)
 
