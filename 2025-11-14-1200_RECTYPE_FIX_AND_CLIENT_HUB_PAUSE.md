@@ -180,7 +180,8 @@ ssh azureuser@104.45.41.81 'ls -la /opt/microshare-eventhub-function/.env.backup
 **2. Restore dual-hub configuration**
 ```bash
 ssh azureuser@104.45.41.81 'cd /opt/microshare-eventhub-function && \
-  sed -i "s|^EVENT_HUB_CONNECTION_STRINGS=\[\]|EVENT_HUB_CONNECTION_STRINGS=[\"Endpoint=sb://occupancydata-dev-ehns.servicebus.windows.net/;SharedAccessKeyName=OccupancyData-microshare-dev-manage-authrule;SharedAccessKey=<REDACTED>;EntityPath=occupancydata-microshare-dev-function-eh\"]|" .env'
+  cp .env.backup.* .env'
+# Or restore from backup on VM: /opt/microshare-eventhub-function/.env.backup.20251114_*
 ```
 
 **3. Verify configuration**
