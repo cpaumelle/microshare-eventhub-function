@@ -16,6 +16,27 @@ This Azure Function enables Microshare™ customers to securely and reliably ret
 - **Deduplication**: Ensures only new snapshots are forwarded to Event Hub.
 - **Azure-native logging**: Application Insights provides full execution logs, metrics, and telemetry.
 - **Encrypted configuration**: All secrets stored as Azure Function App settings, encrypted at rest.
+- **Dual Event Hub support**: Can broadcast data to multiple Event Hubs simultaneously for redundancy or client delivery.
+- **recType field**: All events include recType field for easy downstream routing and processing.
+
+## Recent Improvements (2025-11-14)
+
+### Code Quality & Maintainability
+- **Refactored architecture**: Eliminated 95% code duplication with shared orchestration helper (`run_forwarder()`)
+- **Simplified functions**: Timer functions reduced from 50+ lines to 8 lines each
+- **Common API helpers**: Extracted `_query_dashboard_api()` for shared dashboard query logic
+- **Better naming**: Consistent terminology (`events_sent` vs confusing `snapshots_sent`)
+
+### Data Format & Client Integration
+- **recType field added**: All events now include `recType` field for client routing
+  - People counter: `io.microshare.peoplecounter.unpacked.event.agg`
+  - Snapshots: `io.microshare.lake.snapshot.hourly`
+- **Documented data formats**: Clear examples of flattened vs complete API response structures
+
+### Infrastructure Flexibility
+- **Dual-hub broadcasting**: Send data to multiple Event Hubs simultaneously
+- **Flexible deployment**: Same code runs on VM (current) or Azure Function App (cloud)
+- **Independent schedules**: People counter (15min) and snapshots (hourly) run separately
 
 ## Security Architecture
 
